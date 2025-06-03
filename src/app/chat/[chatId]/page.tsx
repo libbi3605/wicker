@@ -66,14 +66,20 @@ export default function ChatConversationPage() {
 
 
   useEffect(() => {
-    if (!chatId || !wickerUser.uid) return;
+    if (!chatId || !wickerUser || !wickerUser.uid) {
+        // If wickerUser is null or uid is not available, don't proceed with chat loading.
+        // The main component render logic already handles the case where wickerUser is null.
+        // Set loadingChat to false if we can't proceed, to prevent infinite loading state.
+        setLoadingChat(false);
+        return;
+    }
     setLoadingChat(true);
 
     const chatDocRef = doc(db, 'chats', chatId);
     const unsubscribeChatDetails = onSnapshot(chatDocRef, async (docSnap) => {
       if (docSnap.exists()) {
         const chatData = { id: docSnap.id, ...docSnap.data() } as Chat;
-        // Attempt to fetch participant details if not already present or if participants array exists
+        
         if ((!chatData.participantDetails || chatData.participantDetails.length === 0) && chatData.participants && chatData.participants.length > 0) {
           try {
             const participantDetailsPromises = chatData.participants.map(async (uid) => {
@@ -82,7 +88,6 @@ export default function ChatConversationPage() {
             });
             const resolvedDetails = (await Promise.all(participantDetailsPromises)).filter(Boolean) as WickerUser[];
             if (resolvedDetails.length !== chatData.participants.length && chatData.participants.length > 0) {
-                 // This implies some user docs might not have been found or fetched, which could be an issue
                  console.warn("Not all participant details could be resolved for chat:", chatId);
             }
             chatData.participantDetails = resolvedDetails.map(u => ({ uid: u.uid, username: u.username, publicKey: u.publicKey }));
@@ -90,19 +95,18 @@ export default function ChatConversationPage() {
           } catch (error) {
             console.error("Error fetching full participant details:", error);
             toast({ title: "Chat Load Error", description: "Could not load full participant details. Chat may be incomplete.", variant: "destructive"});
-            // Set chatDetails to null if fetching participant details fails critically
             setChatDetails(null); 
-            setLoadingChat(false);
-            return; // Exit if participant details fetch fails
+            setLoadingChat(false); // Ensure loading is stopped on critical error
+            return; 
           }
         } else {
-            setChatDetails(chatData); // Set if details already exist or no participants to fetch
+            setChatDetails(chatData); 
         }
       } else {
         setChatDetails(null);
         toast({ title: "Chat not found", description: "This chat may no longer exist.", variant: "destructive" });
       }
-      // setLoadingChat(false); // Moved setting loading false to after message logic or error cases
+      // setLoadingChat(false); // This will be handled by the messages snapshot or error cases
     }, (error) => {
       console.error("Error fetching chat details snapshot:", error);
       toast({ title: "Chat Load Error", description: "Could not load chat details. You might be offline.", variant: "destructive"});
@@ -138,7 +142,7 @@ export default function ChatConversationPage() {
          });
       }
       setMessages(newMessages);
-      setLoadingChat(false); // Set loading to false after messages are processed
+      setLoadingChat(false); 
     }, (error) => {
       console.error("Error fetching messages snapshot:", error);
       toast({ title: "Message Load Error", description: "Could not load messages. You might be offline.", variant: "destructive"});
@@ -150,7 +154,7 @@ export default function ChatConversationPage() {
       unsubscribeChatDetails();
       unsubscribeMessages();
     };
-  }, [chatId, wickerUser.uid, sharedSecret, toast]);
+  }, [chatId, wickerUser, sharedSecret, toast]); // Changed wickerUser.uid to wickerUser
 
   const handleSendMessage = useCallback(async (content: string, ephemeralSettings?: Partial<ChatMessage>) => {
     if (!wickerUser || !wickerUser.uid) {

@@ -9,7 +9,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { useToast } from '@/hooks/use-toast'; // Import useToast
+import { useToast } from '@/hooks/use-toast'; 
 
 interface ChatListProps {
   activeChatId: string;
@@ -19,12 +19,12 @@ export default function ChatList({ activeChatId }: ChatListProps) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
   const { wickerUser } = useAuth();
-  const { toast } = useToast(); // Initialize toast
+  const { toast } = useToast(); 
 
   useEffect(() => {
-    if (!wickerUser?.uid) {
-      setLoading(false); // Stop loading if no user
-      setChats([]); // Clear chats if no user
+    if (!wickerUser || !wickerUser.uid) {
+      setLoading(false); 
+      setChats([]); 
       return;
     }
 
@@ -41,17 +41,17 @@ export default function ChatList({ activeChatId }: ChatListProps) {
       setLoading(false);
     }, (error) => {
       console.error("Error fetching chats:", error);
-      toast({ // Add toast notification on error
+      toast({ 
         title: "Chat List Error",
         description: "Could not load your chats. You might be offline or an error occurred.",
         variant: "destructive",
       });
-      setChats([]); // Clear chats on error
+      setChats([]); 
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [wickerUser?.uid, toast]); // Add toast to dependency array
+  }, [wickerUser, toast]); // Changed wickerUser.uid to wickerUser
 
   const getChatNameAndAvatar = (chat: Chat) => {
     if (chat.isGroupChat) {
@@ -61,7 +61,9 @@ export default function ChatList({ activeChatId }: ChatListProps) {
         isGroup: true,
       };
     }
-    const otherParticipantId = chat.participants.find(p => p !== wickerUser?.uid);
+    // Ensure wickerUser and its uid are available before accessing them
+    const currentUserId = wickerUser?.uid;
+    const otherParticipantId = currentUserId ? chat.participants.find(p => p !== currentUserId) : undefined;
     const otherUserName = chat.participantDetails?.find(p => p.uid === otherParticipantId)?.username || 'User';
 
     return {
