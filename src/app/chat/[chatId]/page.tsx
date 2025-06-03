@@ -7,12 +7,13 @@ import { db } from '@/lib/firebase';
 import type { Chat, ChatMessage, WickerUser } from '@/lib/types';
 import { EphemeralSettingsSuggestion } from '@/lib/types';
 import { suggestEphemeralSettings } from '@/ai/flows/suggest-ephemeral-settings'; // AI Flow
-import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, writeBatch, deleteDoc } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { encryptMessage, decryptMessage, generateAESKeyString, importAESKeyFromString } from '@/lib/crypto';
+import { isValid } from 'date-fns'; // For checking timestamp validity
 
 export default function ChatConversationPage() {
   const params = useParams();
@@ -69,14 +70,12 @@ export default function ChatConversationPage() {
                 chatData.participantDetails = resolvedDetails.map(u => ({ uid: u.uid, username: u.username, publicKey: u.publicKey || null }));
             } else { 
                 console.warn("Could not resolve any participant details for chat (though participant UIDs exist):", chatId);
-                toast({ title: "Chat Load Warning", description: "Could not load full participant details. Some information may be missing.", variant: "default"});
             }
-            // Always set chatDetails, even if enrichment failed, to allow chat to open
             setChatDetails(chatData); 
           } catch (error: any) {
             console.error("Error fetching full participant details:", error);
             toast({ title: "Chat Load Error", description: `Could not load full participant details: ${error.message}. Chat may be incomplete.`, variant: "destructive"});
-            setChatDetails(chatData);
+            setChatDetails(chatData); // Fallback to basic chat data
           }
         } else {
             setChatDetails(chatData); 
@@ -98,13 +97,36 @@ export default function ChatConversationPage() {
     );
 
     const unsubscribeMessages = onSnapshot(messagesQuery, async (snapshot) => {
-      const newMessages: ChatMessage[] = [];
+      let newMessages: ChatMessage[] = [];
       const batch = writeBatch(db);
       let shouldCommitBatch = false;
+      const idsToDeleteThisCycle = new Set<string>();
 
-      if (sharedSecret && wickerUser) {
+      if (sharedSecret && wickerUser && chatDetails) {
         for (const docSnap of snapshot.docs) {
           const msgData = { id: docSnap.id, ...docSnap.data() } as ChatMessage;
+          const messageRef = doc(db, `chats/${chatId}/messages`, msgData.id);
+
+          // 1. Handle Expired Messages - Attempt to delete from DB
+          if (msgData.expirationTimestamp && msgData.expirationTimestamp.toDate) {
+            try {
+              const expiryDate = msgData.expirationTimestamp.toDate();
+              if (isValid(expiryDate) && expiryDate < new Date()) {
+                if (!idsToDeleteThisCycle.has(msgData.id)) {
+                  batch.delete(messageRef);
+                  shouldCommitBatch = true;
+                  idsToDeleteThisCycle.add(msgData.id);
+                }
+                continue; // Skip further processing for this message
+              }
+            } catch (e) {
+              console.error("Error processing expiration for DB deletion:", e, msgData.expirationTimestamp);
+            }
+          }
+          
+          if (idsToDeleteThisCycle.has(msgData.id)) continue;
+
+          // 2. Decrypt content
           if (msgData.encryptedContent) {
             try {
               msgData.decryptedContent = await decryptMessage(msgData.encryptedContent, sharedSecret);
@@ -114,17 +136,27 @@ export default function ChatConversationPage() {
             }
           }
           
+          // 3. Handle Read Status and Burn-on-Read Deletion (for 1-on-1)
           if (msgData.senderId !== wickerUser.uid && (!msgData.readBy || !msgData.readBy[wickerUser.uid])) {
             if (!processedMessageIds.current.has(msgData.id)) { 
-              const messageRef = doc(db, `chats/${chatId}/messages`, msgData.id);
               batch.update(messageRef, {
                 [`readBy.${wickerUser.uid}`]: serverTimestamp(),
                 status: 'read' 
               });
               shouldCommitBatch = true;
               processedMessageIds.current.add(msgData.id); 
-              msgData.readBy = { ...msgData.readBy, [wickerUser.uid]: serverTimestamp() as any }; // Reflect update locally
-              msgData.status = 'read'; // Reflect update locally
+              msgData.readBy = { ...msgData.readBy, [wickerUser.uid]: serverTimestamp() as any }; 
+              msgData.status = 'read'; 
+
+              if (msgData.isBurnOnRead && !chatDetails.isGroupChat) {
+                 if (!idsToDeleteThisCycle.has(msgData.id)) {
+                    batch.delete(messageRef);
+                    idsToDeleteThisCycle.add(msgData.id);
+                    // shouldCommitBatch is already true
+                 }
+                 // If deleted, it will be filtered out from newMessages before setting state
+                 continue; // Skip adding to newMessages if burned and deleted
+              }
             }
           }
           newMessages.push(msgData);
@@ -132,17 +164,27 @@ export default function ChatConversationPage() {
       } else {
          snapshot.docs.forEach(docSnap => {
             const msgData = { id: docSnap.id, ...docSnap.data() } as ChatMessage;
+            // Basic handling if decryption/user context isn't ready
+            if (msgData.expirationTimestamp && msgData.expirationTimestamp.toDate) {
+                try {
+                    const expiryDate = msgData.expirationTimestamp.toDate();
+                    if (isValid(expiryDate) && expiryDate < new Date()) return; // Don't add if expired
+                } catch (e) { /* ignore */ }
+            }
             msgData.decryptedContent = "[Encryption key not ready or user not loaded]";
             newMessages.push(msgData);
          });
       }
-      setMessages(newMessages);
+
+      // Filter out messages that were marked for deletion in this processing cycle
+      setMessages(newMessages.filter(msg => !idsToDeleteThisCycle.has(msg.id)));
+      
       if (shouldCommitBatch) {
         try {
             await batch.commit();
         } catch (error) {
-            console.error("Error committing read status updates:", error);
-            toast({ title: "Read Status Error", description: "Could not update read statuses.", variant: "destructive" });
+            console.error("Error committing batch updates/deletions:", error);
+            toast({ title: "Sync Error", description: "Could not update/delete messages.", variant: "destructive" });
         }
       }
       setLoadingChat(false); 
@@ -157,7 +199,7 @@ export default function ChatConversationPage() {
       unsubscribeChatDetails();
       unsubscribeMessages();
     };
-  }, [chatId, wickerUser, sharedSecret, toast]);
+  }, [chatId, wickerUser, sharedSecret, toast, chatDetails]); // Added chatDetails to dependencies
 
   const handleSendMessage = useCallback(async (content: string, ephemeralSettings?: Partial<ChatMessage>) => {
     if (!wickerUser || !wickerUser.uid) {
@@ -278,3 +320,5 @@ export default function ChatConversationPage() {
     </div>
   );
 }
+
+    
