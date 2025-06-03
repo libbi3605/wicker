@@ -23,11 +23,11 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
   const handleCreateChat = async (selectedUsers: WickerUser[], groupName?: string) => {
     if (!wickerUser) {
       toast({ title: "Error", description: "You must be logged in to create a chat.", variant: "destructive" });
-      return;
+      return Promise.reject(new Error("User not logged in"));
     }
     if (selectedUsers.length === 0) {
       toast({ title: "Error", description: "Please select at least one user.", variant: "destructive" });
-      return;
+      return Promise.reject(new Error("No user selected"));
     }
 
     const participantUids = [wickerUser.uid, ...selectedUsers.map(u => u.uid)];
@@ -35,7 +35,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
 
     if (isGroup && (!groupName || groupName.trim() === "")) {
         toast({ title: "Error", description: "Group name is required for group chats.", variant: "destructive" });
-        return;
+        return Promise.reject(new Error("Group name required"));
     }
     
     try {
@@ -47,24 +47,25 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         lastMessage: null,
+        // Storing participant details directly in the chat document for easier access in ChatList/ChatWindow
+        participantDetails: [
+          { uid: wickerUser.uid, username: wickerUser.username, publicKey: wickerUser.publicKey || null },
+          ...selectedUsers.map(u => ({ uid: u.uid, username: u.username, publicKey: u.publicKey || null }))
+        ]
       });
-
-      // Add chat reference to each user's profile (optional, for quick access)
-      // This part can be complex and might be better handled by queries.
-      // For now, let's skip updating user docs to keep it simpler.
-      // const batch = writeBatch(db);
-      // participantUids.forEach(uid => {
-      //   const userChatRef = doc(db, `users/${uid}/chats`, chatRef.id);
-      //   batch.set(userChatRef, { joinedAt: serverTimestamp() });
-      // });
-      // await batch.commit();
 
       toast({ title: "Chat Created", description: isGroup ? `Group "${groupName}" created.` : "Direct chat started." });
       setCreateChatModalOpen(false);
-      router.push(`/chat/${chatRef.id}`);
+      
+      // Introduce a small delay to allow modal to close before navigation
+      setTimeout(() => {
+        router.push(`/chat/${chatRef.id}`);
+      }, 50); // 50ms delay
+
     } catch (error) {
       console.error("Error creating chat:", error);
       toast({ title: "Error", description: "Could not create chat.", variant: "destructive" });
+      return Promise.reject(error); // Propagate error so modal can handle its state
     }
   };
   

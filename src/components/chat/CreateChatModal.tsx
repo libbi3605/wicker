@@ -77,43 +77,37 @@ export default function CreateChatModal({ isOpen, onClose, onCreateChat }: Creat
         setIsGroupChat(true);
     } else {
         setIsGroupChat(false);
-        setGroupName(''); // Reset group name if not a group chat
+        setGroupName(''); 
     }
   }, [selectedUsers]);
 
   const handleSubmit = async () => {
+    if (isCreatingChat || selectedUsers.length === 0 || (isGroupChat && !groupName.trim())) {
+      return;
+    }
     setIsCreatingChat(true);
     try {
       await onCreateChat(selectedUsers, isGroupChat ? groupName : undefined);
-      // If successful, the parent component (ChatLayout) will close the modal.
-      // Reset local form state for the next time the modal is opened.
-      setSearchTerm('');
-      setSearchResults([]);
-      setSelectedUsers([]);
-      setGroupName('');
-      setIsGroupChat(false);
+      // If onCreateChat is successful, the parent ChatLayout will call onClose,
+      // which in turn changes the isOpen prop, triggering the useEffect to reset the modal's state.
     } catch (error) {
       // Error handling (e.g., toast message) is expected to be done in the `onCreateChat` function
-      // passed from the parent. The modal itself just needs to ensure its UI is correctly reset.
-      console.error("CreateChatModal: Error during onCreateChat call:", error);
-      // On error, selections are intentionally NOT cleared, allowing the user to retry.
+      // or handled by the parent. The modal remains open for retry.
+      console.error("CreateChatModal: Error during onCreateChat call from parent:", error);
     } finally {
-      setIsCreatingChat(false); // Crucially, always reset loading state
+      setIsCreatingChat(false); 
     }
   };
   
-  // Effect to reset fields when the modal is closed externally (e.g. after successful chat creation)
-  // or if it's closed via the cancel button.
   useEffect(() => {
     if (!isOpen) {
-      // Reset all relevant state when the modal is no longer open
       setSearchTerm('');
       setSearchResults([]);
       setSelectedUsers([]);
       setGroupName('');
       setIsGroupChat(false);
-      setIsCreatingChat(false); // Ensure creating state is also reset
-      setIsLoadingSearch(false); // Reset search loading state
+      setIsCreatingChat(false); 
+      setIsLoadingSearch(false); 
     }
   }, [isOpen]);
 
@@ -135,12 +129,13 @@ export default function CreateChatModal({ isOpen, onClose, onCreateChat }: Creat
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
+              disabled={isCreatingChat}
             />
           </div>
 
           {isLoadingSearch && <div className="flex justify-center p-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}
           
-          {searchResults.length > 0 && !isLoadingSearch && (
+          {!isLoadingSearch && searchResults.length > 0 && (
             <ScrollArea className="h-[150px] border rounded-md p-2">
               <div className="space-y-2">
                 {searchResults.map(user => (
@@ -156,12 +151,16 @@ export default function CreateChatModal({ isOpen, onClose, onCreateChat }: Creat
                       id={`user-${user.uid}`}
                       checked={selectedUsers.some(u => u.uid === user.uid)}
                       onCheckedChange={() => handleUserSelect(user)}
+                      disabled={isCreatingChat}
                     />
                   </div>
                 ))}
               </div>
             </ScrollArea>
           )}
+           {!isLoadingSearch && searchTerm && searchResults.length === 0 && (
+             <p className="p-4 text-sm text-center text-muted-foreground">No users found matching "{searchTerm}".</p>
+           )}
           
           {selectedUsers.length > 0 && (
             <div>
@@ -170,7 +169,7 @@ export default function CreateChatModal({ isOpen, onClose, onCreateChat }: Creat
                     {selectedUsers.map(u => (
                         <div key={u.uid} className="flex items-center space-x-1 px-2 py-1 text-xs bg-primary text-primary-foreground rounded-full">
                             <span>{u.username}</span>
-                            <button onClick={() => handleUserSelect(u)} className="opacity-70 hover:opacity-100">&times;</button>
+                            <button onClick={() => !isCreatingChat && handleUserSelect(u)} className="opacity-70 hover:opacity-100" disabled={isCreatingChat}>&times;</button>
                         </div>
                     ))}
                 </div>
@@ -185,15 +184,21 @@ export default function CreateChatModal({ isOpen, onClose, onCreateChat }: Creat
                 placeholder="Enter group name..."
                 value={groupName}
                 onChange={(e) => setGroupName(e.target.value)}
+                disabled={isCreatingChat}
               />
             </div>
           )}
         </div>
         <DialogFooter>
           <DialogClose asChild>
-            <Button type="button" variant="outline">Cancel</Button>
+            <Button type="button" variant="outline" disabled={isCreatingChat}>Cancel</Button>
           </DialogClose>
-          <Button type="submit" onClick={handleSubmit} disabled={selectedUsers.length === 0 || (isGroupChat && !groupName.trim()) || isCreatingChat} className="bg-primary hover:bg-primary/90">
+          <Button 
+            type="submit" 
+            onClick={handleSubmit} 
+            disabled={selectedUsers.length === 0 || (isGroupChat && !groupName.trim()) || isCreatingChat} 
+            className="bg-primary hover:bg-primary/90"
+          >
             {isCreatingChat ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (isGroupChat ? <Users size={16} className="mr-2"/> : <UserPlus size={16} className="mr-2"/>)}
             {isCreatingChat ? "Creating..." : (isGroupChat ? "Create Group" : "Start Chat")}
           </Button>
