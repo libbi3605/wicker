@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
-import { Loader2, ShieldLock } from 'lucide-react';
+import { Loader2, Shield } from 'lucide-react'; // Changed ShieldLock to Shield
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -53,7 +53,7 @@ export default function AuthPage() {
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center">
           <div className="inline-flex items-center justify-center mb-4">
-            <ShieldLock className="h-12 w-12 text-primary" />
+            <Shield className="h-12 w-12 text-primary" /> {/* Changed ShieldLock to Shield */}
           </div>
           <CardTitle className="text-3xl font-bold text-primary font-headline">WickerSphere</CardTitle>
           <CardDescription>Secure & Ephemeral Messaging</CardDescription>
