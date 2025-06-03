@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
-import { Loader2, Shield } from 'lucide-react'; // Changed ShieldLock to Shield
+import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import Image from 'next/image';
 
 export default function AuthPage() {
   const { currentUser, loading: authLoading, signInAsGuest } = useAuth();
@@ -35,7 +36,7 @@ export default function AuthPage() {
     setGuestLoading(true);
     try {
       await signInAsGuest();
-      toast({ title: 'Signed In as Guest', description: 'Welcome to WickerSphere!' });
+      toast({ title: 'Signed In as Guest', description: 'Welcome to Wicker!' });
       router.push('/chat');
     } catch (error: any) {
       toast({
@@ -49,20 +50,20 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background to-secondary/30 p-4">
-      <Card className="w-full max-w-md shadow-2xl">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background to-card/80 p-4">
+      <Card className="w-full max-w-md shadow-2xl bg-card border-border">
         <CardHeader className="text-center">
           <div className="inline-flex items-center justify-center mb-4">
-            <Shield className="h-12 w-12 text-primary" /> {/* Changed ShieldLock to Shield */}
+            <Image src="/logo.png" alt="Wicker Logo" width={80} height={80} className="rounded-full" />
           </div>
-          <CardTitle className="text-3xl font-bold text-primary font-headline">WickerSphere</CardTitle>
-          <CardDescription>Secure & Ephemeral Messaging</CardDescription>
+          <CardTitle className="text-3xl font-bold text-primary font-headline">Wicker</CardTitle>
+          <CardDescription className="text-muted-foreground">Secure & Ephemeral Messaging</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="signin" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="signin">Sign In</TabsTrigger>
-              <TabsTrigger value="signup">Sign Up</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 bg-input text-muted-foreground">
+              <TabsTrigger value="signin" className="data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-md">Sign In</TabsTrigger>
+              <TabsTrigger value="signup" className="data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-md">Sign Up</TabsTrigger>
             </TabsList>
             <TabsContent value="signin" className="pt-6">
               <SignInForm />
@@ -73,7 +74,7 @@ export default function AuthPage() {
           </Tabs>
           <div className="mt-6 text-center">
             <p className="text-sm text-muted-foreground mb-2">Or</p>
-            <Button variant="outline" className="w-full" onClick={handleGuestSignIn} disabled={guestLoading}>
+            <Button variant="outline" className="w-full border-primary/50 hover:bg-primary/10 text-primary" onClick={handleGuestSignIn} disabled={guestLoading}>
               {guestLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Continue as Guest
             </Button>

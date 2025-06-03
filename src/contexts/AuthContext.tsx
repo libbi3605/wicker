@@ -8,7 +8,7 @@ import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import type { ReactNode } from 'react';
 import { createContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useToast } from '@/hooks/use-toast'; // Added for error notifications
+import { useToast } from '@/hooks/use-toast';
 
 interface AuthContextType {
   currentUser: FirebaseUser | null;
@@ -22,14 +22,14 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const formatEmailForFirebase = (username: string) => `${username.toLowerCase()}@wicker.us.com`;
+const formatEmailForFirebase = (username: string) => `${username.toLowerCase()}@wicker.app`; // Changed domain for uniqueness
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [wickerUser, setWickerUser] = useState<WickerUser | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const { toast } = useToast(); // Initialize toast
+  const { toast } = useToast();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -42,19 +42,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setWickerUser(userDocSnap.data() as WickerUser);
           } else if (user.isAnonymous) {
             const baseAnonUsername = `Guest-${user.uid.substring(0, 6)}`;
-            const anonUsername = baseAnonUsername.toLowerCase(); // Ensure guest username is lowercase
+            const anonUsername = baseAnonUsername.toLowerCase();
             const anonUser: WickerUser = {
                 uid: user.uid,
-                username: anonUsername, // Stored in lowercase
+                username: anonUsername,
                 createdAt: serverTimestamp() as any,
             };
             await setDoc(userDocRef, anonUser, { merge: true });
             setWickerUser(anonUser);
           } else {
             console.warn("WickerUser document not found for UID:", user.uid, "User is not anonymous.");
-             // This case should ideally not happen for a non-anonymous user after sign-up/sign-in
-             // as their document should have been created.
-             // If it does, it might indicate an issue during the sign-up's Firestore write.
             setWickerUser(null); 
           }
         } catch (error: any) {
@@ -64,7 +61,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             description: "Could not load your profile. You might be offline or an error occurred.",
             variant: "destructive",
           });
-          setWickerUser(null); // Ensure wickerUser is reset on error
+          setWickerUser(null);
         }
       } else {
         setWickerUser(null);
@@ -83,7 +80,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       const wickerUserData: WickerUser = {
         uid: firebaseUser.uid,
-        username: username.toLowerCase(), // Ensure registered username is lowercase
+        username: username.toLowerCase(),
         createdAt: serverTimestamp() as any,
       };
       await setDoc(doc(db, 'users', firebaseUser.uid), wickerUserData);
@@ -106,7 +103,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const userCredential = await signInWithEmailAndPassword(auth, email, pass);
       const firebaseUser = userCredential.user;
       setCurrentUser(firebaseUser);
-      // WickerUser data will be fetched by onAuthStateChanged, which now handles lowercase guest creation too
       setLoading(false);
       return firebaseUser;
     } catch (error) {
@@ -122,7 +118,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const userCredential = await signInAnonymously(auth);
       const firebaseUser = userCredential.user;
       setCurrentUser(firebaseUser);
-      // WickerUser for anonymous user will be created/fetched by onAuthStateChanged logic, now ensuring lowercase.
+      // Toast for guest sign-in is now handled in AuthPage.tsx for immediate feedback
       setLoading(false);
       return firebaseUser;
     } catch (error) {

@@ -40,7 +40,7 @@ export default function SignUpForm() {
     setLoading(true);
     try {
       await signUp(data.username, data.password);
-      toast({ title: 'Account Created', description: 'Welcome to WickerSphere!' });
+      toast({ title: 'Account Created', description: 'Welcome to Wicker!' });
       router.push('/chat');
     } catch (error: any) {
        toast({
@@ -61,9 +61,9 @@ export default function SignUpForm() {
           name="username"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Username</FormLabel>
+              <FormLabel className="text-foreground/80">Username</FormLabel>
               <FormControl>
-                <Input placeholder="choose_a_username" {...field} />
+                <Input placeholder="choose_a_username" {...field} className="bg-input text-foreground placeholder:text-muted-foreground"/>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -74,19 +74,20 @@ export default function SignUpForm() {
           name="password"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Password</FormLabel>
+              <FormLabel className="text-foreground/80">Password</FormLabel>
               <FormControl>
                  <div className="relative">
                     <Input
                         type={showPassword ? 'text' : 'password'}
                         placeholder="••••••••"
                         {...field}
+                        className="bg-input text-foreground placeholder:text-muted-foreground"
                     />
                     <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 text-muted-foreground hover:text-foreground"
                         onClick={() => setShowPassword(!showPassword)}
                     >
                         {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -102,19 +103,20 @@ export default function SignUpForm() {
           name="confirmPassword"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Confirm Password</FormLabel>
+              <FormLabel className="text-foreground/80">Confirm Password</FormLabel>
               <FormControl>
                 <div className="relative">
                     <Input
                         type={showConfirmPassword ? 'text' : 'password'}
                         placeholder="••••••••"
                         {...field}
+                        className="bg-input text-foreground placeholder:text-muted-foreground"
                     />
                     <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 text-muted-foreground hover:text-foreground"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     >
                         {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -125,7 +127,7 @@ export default function SignUpForm() {
             </FormItem>
           )}
         />
-        <Button type="submit" className="w-full bg-primary hover:bg-primary/90" disabled={loading}>
+        <Button type="submit" className="w-full bg-primary text-primary-foreground hover:bg-primary/90" disabled={loading}>
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Create Account
         </Button>
