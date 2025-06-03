@@ -8,6 +8,7 @@ import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import type { ReactNode } from 'react';
 import { createContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/hooks/use-toast'; // Added for error notifications
 
 interface AuthContextType {
   currentUser: FirebaseUser | null;
@@ -21,8 +22,6 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// This is a workaround for Firebase Auth not directly supporting username-only auth.
-// We'll use "username@wicker.us.com" as the email.
 const formatEmailForFirebase = (username: string) => `${username.toLowerCase()}@wicker.us.com`;
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -30,44 +29,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [wickerUser, setWickerUser] = useState<WickerUser | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const { toast } = useToast(); // Initialize toast
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (user) {
-        // Fetch WickerUser profile
-        const userDocRef = doc(db, 'users', user.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          setWickerUser(userDocSnap.data() as WickerUser);
-        } else if (!user.isAnonymous) {
-          // This case should ideally not happen if signup creates the doc.
-          // Could be a new user whose profile doc creation is pending.
-          console.warn("WickerUser document not found for UID:", user.uid);
-          setWickerUser(null); // Or attempt to create it if necessary
-        } else {
-            // For anonymous users, we might create a temporary WickerUser profile
+        try {
+          const userDocRef = doc(db, 'users', user.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            setWickerUser(userDocSnap.data() as WickerUser);
+          } else if (user.isAnonymous) {
             const anonUsername = `Guest-${user.uid.substring(0, 6)}`;
             const anonUser: WickerUser = {
                 uid: user.uid,
                 username: anonUsername,
-                createdAt: serverTimestamp() as any, // Firestore handles this conversion
+                createdAt: serverTimestamp() as any,
             };
             await setDoc(userDocRef, anonUser, { merge: true });
             setWickerUser(anonUser);
+          } else {
+            console.warn("WickerUser document not found for UID:", user.uid, "User is not anonymous.");
+            setWickerUser(null); 
+          }
+        } catch (error: any) {
+          console.error("Error fetching user document in AuthContext:", error);
+          toast({
+            title: "Profile Error",
+            description: "Could not load your profile. You might be offline.",
+            variant: "destructive",
+          });
+          setWickerUser(null); // Ensure wickerUser is reset on error
         }
       } else {
         setWickerUser(null);
-        // Try to sign in anonymously if __initial_auth_token is not available (handled by Firebase persistence)
-        // The prompt mentions `__initial_auth_token` which is usually for custom auth.
-        // For simplicity, if no user, we try anonymous sign-in as a fallback.
-        // However, typical flow is: check auth state, if no user, redirect to /auth page.
-        // Let's not auto-sign-in anonymously here, but provide a button on auth page.
       }
       setLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [toast]);
   
   const signUp = async (username: string, pass: string) => {
     setLoading(true);
@@ -76,12 +77,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
       const firebaseUser = userCredential.user;
       
-      // Create WickerUser document in Firestore
       const wickerUserData: WickerUser = {
         uid: firebaseUser.uid,
-        username: username.toLowerCase(), // Store username in lowercase
-        createdAt: serverTimestamp() as any, // Firestore handles this conversion
-        // publicKey: await generateAndStoreKeyPair() // Implement key generation
+        username: username.toLowerCase(),
+        createdAt: serverTimestamp() as any,
       };
       await setDoc(doc(db, 'users', firebaseUser.uid), wickerUserData);
       
@@ -92,7 +91,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error("Error signing up:", error);
       setLoading(false);
-      throw error; // Re-throw to be caught by the form
+      throw error;
     }
   };
 
@@ -102,8 +101,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const email = formatEmailForFirebase(username);
       const userCredential = await signInWithEmailAndPassword(auth, email, pass);
       const firebaseUser = userCredential.user;
-      // WickerUser data will be fetched by onAuthStateChanged
       setCurrentUser(firebaseUser);
+      // WickerUser data will be fetched by onAuthStateChanged
       setLoading(false);
       return firebaseUser;
     } catch (error) {
@@ -118,8 +117,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       const userCredential = await signInAnonymously(auth);
       const firebaseUser = userCredential.user;
-      // WickerUser for anonymous user will be created/fetched by onAuthStateChanged
       setCurrentUser(firebaseUser);
+      // WickerUser for anonymous user will be created/fetched by onAuthStateChanged
       setLoading(false);
       return firebaseUser;
     } catch (error) {
@@ -135,9 +134,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await firebaseSignOut(auth);
       setCurrentUser(null);
       setWickerUser(null);
-      router.push('/auth'); // Redirect to auth page after sign out
+      router.push('/auth'); 
     } catch (error) {
       console.error("Error signing out:", error);
+      toast({ title: "Sign Out Error", description: "Could not sign out properly.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
