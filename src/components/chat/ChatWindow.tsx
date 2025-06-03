@@ -5,7 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { Clock, Fire, Eye } from 'lucide-react';
+import { Clock, Flame, Eye } from 'lucide-react'; // Changed Fire to Flame
 import { useEffect, useRef } from 'react';
 
 interface ChatWindowProps {
@@ -32,7 +32,7 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
           // Basic ephemeral status rendering
           let ephemeralIndicator = null;
           if (msg.isBurnOnRead) {
-            ephemeralIndicator = <Fire size={12} className="text-orange-500" title="Burn on read" />;
+            ephemeralIndicator = <Flame size={12} className="text-orange-500" title="Burn on read" />; // Changed Fire to Flame
           } else if (msg.expirationTimestamp) {
             const isExpired = msg.expirationTimestamp.toDate() < new Date();
             // For now, expired messages are filtered out by deletion logic (not yet fully implemented)

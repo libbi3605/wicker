@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ChatMessage, EphemeralSettingsSuggestion } from '@/lib/types';
-import { Send, Sparkles, Clock, Fire, Loader2 } from 'lucide-react';
+import { Send, Sparkles, Clock, Flame, Loader2 } from 'lucide-react'; // Changed Fire to Flame
 import { type ChangeEvent, type KeyboardEvent, useState, useRef } from 'react';
 import { Textarea } from '../ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
@@ -127,7 +127,7 @@ export default function MessageInput({ onSendMessage, onSuggestSettings, chatId 
                 <div className="flex items-center space-x-2">
                     <Switch id="burn-on-read" checked={burnOnRead} onCheckedChange={setBurnOnRead} />
                     <Label htmlFor="burn-on-read" className="flex items-center">
-                        <Fire size={14} className="mr-1 text-orange-500"/> Burn on Read
+                        <Flame size={14} className="mr-1 text-orange-500"/> Burn on Read {/* Changed Fire to Flame */}
                     </Label>
                 </div>
             </PopoverContent>
