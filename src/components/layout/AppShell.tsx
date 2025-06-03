@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import UserProfileDisplay from '@/components/chat/UserProfileDisplay';
 import { Button } from '@/components/ui/button';
-import { LogOut, Settings, MessageSquarePlus } from 'lucide-react';
+import { LogOut, Settings, MessageSquarePlus, Info } from 'lucide-react'; // Added Info icon
 import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
 
@@ -39,11 +39,16 @@ export default function AppShell({ sidebarContent, mainContent, onNewChat }: App
         
         <footer className="p-4 border-t border-border">
           {wickerUser && <UserProfileDisplay />}
-          <div className="mt-2 flex space-x-2">
-            <Button variant="ghost" size="sm" className="flex-1 justify-start text-muted-foreground hover:text-foreground">
+          <div className="mt-2 grid grid-cols-1 gap-2"> {/* Changed to grid for better button layout */}
+            <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-foreground">
               <Settings size={16} className="mr-2" /> Settings
             </Button>
-            <Button variant="ghost" size="sm" className="flex-1 justify-start text-muted-foreground hover:text-destructive" onClick={signOut}>
+            <Button asChild variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-foreground">
+              <Link href="/info">
+                <Info size={16} className="mr-2" /> Safety Info
+              </Link>
+            </Button>
+            <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-destructive" onClick={signOut}>
               <LogOut size={16} className="mr-2" /> Sign Out
             </Button>
           </div>

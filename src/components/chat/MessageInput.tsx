@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ChatMessage, EphemeralSettingsSuggestion } from '@/lib/types';
-import { Send, Sparkles, Clock, Flame, Loader2 } from 'lucide-react'; // Changed Fire to Flame
+import { Send, Sparkles, Clock, Flame, Loader2 } from 'lucide-react';
 import { type ChangeEvent, type KeyboardEvent, useState, useRef } from 'react';
 import { Textarea } from '../ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
@@ -17,7 +17,7 @@ import { Timestamp } from 'firebase/firestore';
 interface MessageInputProps {
   onSendMessage: (content: string, ephemeralSettings?: Partial<ChatMessage>) => Promise<void>;
   onSuggestSettings: (messageContent: string) => Promise<EphemeralSettingsSuggestion | null>;
-  chatId: string; // Needed for context, e.g., typing indicators
+  chatId: string; 
 }
 
 export default function MessageInput({ onSendMessage, onSuggestSettings, chatId }: MessageInputProps) {
@@ -25,14 +25,13 @@ export default function MessageInput({ onSendMessage, onSuggestSettings, chatId 
   const [isSending, setIsSending] = useState(false);
   const [isAiSuggesting, setIsAiSuggesting] = useState(false);
   
-  const [expirationOption, setExpirationOption] = useState<'never' | '1m' | '1h' | '1d'>('never');
+  const [expirationOption, setExpirationOption] = useState<'never' | '1m' | '1h' | '1d'>('1m'); // Default to 1 minute
   const [burnOnRead, setBurnOnRead] = useState(false);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleInputChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(event.target.value);
-    // Auto-resize textarea
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
@@ -57,11 +56,8 @@ export default function MessageInput({ onSendMessage, onSuggestSettings, chatId 
     await onSendMessage(message.trim(), ephemeralSettings);
     setMessage('');
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'; // Reset height
+      textareaRef.current.style.height = 'auto'; 
     }
-    // Reset ephemeral settings to default after sending
-    // setExpirationOption('never');
-    // setBurnOnRead(false);
     setIsSending(false);
     textareaRef.current?.focus();
   };
@@ -78,14 +74,11 @@ export default function MessageInput({ onSendMessage, onSuggestSettings, chatId 
     setIsAiSuggesting(true);
     const suggestion = await onSuggestSettings(message.trim());
     if (suggestion) {
-        // Apply suggestions
         if (suggestion.expirationTimeSuggestion === '1 minute') setExpirationOption('1m');
         else if (suggestion.expirationTimeSuggestion === '1 hour') setExpirationOption('1h');
         else if (suggestion.expirationTimeSuggestion === '1 day') setExpirationOption('1d');
         else setExpirationOption('never');
         setBurnOnRead(suggestion.burnOnReadSuggestion);
-        // Optionally, show a toast with reasoning:
-        // toast({ title: "AI Suggestion Applied", description: suggestion.reasoning });
     }
     setIsAiSuggesting(false);
   };
@@ -117,17 +110,17 @@ export default function MessageInput({ onSendMessage, onSuggestSettings, chatId 
                             <SelectValue placeholder="Set expiration" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="never">Never</SelectItem>
                             <SelectItem value="1m">1 Minute</SelectItem>
                             <SelectItem value="1h">1 Hour</SelectItem>
                             <SelectItem value="1d">1 Day</SelectItem>
+                            <SelectItem value="never">Never</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
                 <div className="flex items-center space-x-2">
                     <Switch id="burn-on-read" checked={burnOnRead} onCheckedChange={setBurnOnRead} />
                     <Label htmlFor="burn-on-read" className="flex items-center">
-                        <Flame size={14} className="mr-1 text-orange-500"/> Burn on Read {/* Changed Fire to Flame */}
+                        <Flame size={14} className="mr-1 text-orange-500"/> Burn on Read
                     </Label>
                 </div>
             </PopoverContent>
