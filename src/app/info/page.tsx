@@ -11,7 +11,7 @@ export default function InfoPage() {
       <Card className="w-full max-w-3xl shadow-xl bg-card border-border text-foreground">
         <CardHeader className="text-center border-b border-border pb-4">
           <div className="inline-flex items-center justify-center mb-3">
-            <Image src="https://i.imgur.com/qRm5rG3.png" alt="Wicker Logo" width={64} height={64} className="rounded-md" />
+            <Image src="https://i.imgur.com/qRm5rG3.png" alt="Wicker Logo" width={80} height={80} className="rounded-md" />
           </div>
           <CardTitle className="text-3xl font-bold text-primary font-headline">
             Wicker: Security & Privacy

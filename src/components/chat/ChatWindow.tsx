@@ -23,12 +23,9 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
   }, [messages]);
 
   const filteredMessages = messages.filter(msg => {
-    // Check for burn-on-read: if true and current user has read it, filter out
     if (msg.isBurnOnRead && msg.readBy && msg.readBy[currentUserId]) {
       return false; 
     }
-
-    // Check for expiration: if timestamp exists and is in the past, filter out
     if (msg.expirationTimestamp && msg.expirationTimestamp.toDate) {
       try {
         const expiryDate = msg.expirationTimestamp.toDate();
@@ -37,25 +34,26 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
         }
       } catch (e) {
         console.error("Error converting Firestore Timestamp to Date for expiration check:", e, msg.expirationTimestamp);
-        // Optionally, decide if invalid expiration means message should be hidden or shown with error
       }
     }
-    return true; // If neither condition met, keep the message
+    return true;
   });
 
-
   return (
-    <ScrollArea className="flex-1 p-4 bg-background min-h-0" ref={scrollAreaRef}> {/* Added min-h-0 */}
-      <div className="space-y-1">
+    <ScrollArea className="flex-1 p-4 bg-background min-h-0 relative" ref={scrollAreaRef}> {/* Added relative */}
+      {/* Background Logo Div */}
+      <div
+        className="absolute inset-0 z-0 bg-no-repeat bg-center bg-contain opacity-10 pointer-events-none"
+        style={{ backgroundImage: `url('https://i.imgur.com/qRm5rG3.png')` }}
+      />
+      {/* Messages container - needs to be on top */}
+      <div className="space-y-1 relative z-10"> {/* Added relative z-10 */}
         {filteredMessages.map((msg, index) => {
           const isCurrentUser = msg.senderId === currentUserId;
           const senderInitial = msg.senderUsername?.substring(0, 1).toUpperCase() || '?';
           
           const prevMessage = filteredMessages[index - 1];
-          // const nextMessage = filteredMessages[index + 1]; // Not strictly needed for current styling
-
           const isFirstInSenderBlock = index === 0 || prevMessage?.senderId !== msg.senderId;
-          
           const showAvatarAndName = !isCurrentUser && isFirstInSenderBlock;
           
           let ephemeralIndicator = null;
@@ -67,8 +65,6 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
                 if (isValid(expiryDate) && expiryDate >= new Date()) { 
                     ephemeralIndicator = <Clock size={12} className="text-blue-500" title={`Expires ${format(expiryDate, "PPp")}`} />;
                 } else if (isValid(expiryDate) && expiryDate < new Date()) {
-                    // Message has expired but somehow wasn't filtered out - this case should ideally not be reached
-                    // if filtering logic above is correct. Render as expired for safety.
                     ephemeralIndicator = <Clock size={12} className="text-muted-foreground opacity-50" title={`Expired`} />;
                 }
             } catch (e) {

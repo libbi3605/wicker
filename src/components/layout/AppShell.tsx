@@ -35,7 +35,7 @@ export default function AppShell({ sidebarContent, mainContent, onNewChat }: App
             if (isSheetInstance) setMobileSheetOpen(false);
           }}
         >
-          <Image src="https://i.imgur.com/qRm5rG3.png" alt="Wicker Logo" width={32} height={32} />
+          <Image src="https://i.imgur.com/qRm5rG3.png" alt="Wicker Logo" width={40} height={40} />
           <span>Wicker</span>
         </Link>
       </header>
@@ -114,7 +114,7 @@ export default function AppShell({ sidebarContent, mainContent, onNewChat }: App
               </SheetContent>
             </Sheet>
             <Link href="/chat" className="flex items-center space-x-2 text-lg font-semibold text-primary font-headline">
-                <Image src="https://i.imgur.com/qRm5rG3.png" alt="Wicker Logo" width={24} height={24} />
+                <Image src="https://i.imgur.com/qRm5rG3.png" alt="Wicker Logo" width={30} height={30} />
                 <span>Wicker</span>
             </Link>
           </div>
