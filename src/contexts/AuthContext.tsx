@@ -41,23 +41,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (userDocSnap.exists()) {
             setWickerUser(userDocSnap.data() as WickerUser);
           } else if (user.isAnonymous) {
-            const anonUsername = `Guest-${user.uid.substring(0, 6)}`;
+            const baseAnonUsername = `Guest-${user.uid.substring(0, 6)}`;
+            const anonUsername = baseAnonUsername.toLowerCase(); // Ensure guest username is lowercase
             const anonUser: WickerUser = {
                 uid: user.uid,
-                username: anonUsername,
+                username: anonUsername, // Stored in lowercase
                 createdAt: serverTimestamp() as any,
             };
             await setDoc(userDocRef, anonUser, { merge: true });
             setWickerUser(anonUser);
           } else {
             console.warn("WickerUser document not found for UID:", user.uid, "User is not anonymous.");
+             // This case should ideally not happen for a non-anonymous user after sign-up/sign-in
+             // as their document should have been created.
+             // If it does, it might indicate an issue during the sign-up's Firestore write.
             setWickerUser(null); 
           }
         } catch (error: any) {
           console.error("Error fetching user document in AuthContext:", error);
           toast({
             title: "Profile Error",
-            description: "Could not load your profile. You might be offline.",
+            description: "Could not load your profile. You might be offline or an error occurred.",
             variant: "destructive",
           });
           setWickerUser(null); // Ensure wickerUser is reset on error
@@ -79,7 +83,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       const wickerUserData: WickerUser = {
         uid: firebaseUser.uid,
-        username: username.toLowerCase(),
+        username: username.toLowerCase(), // Ensure registered username is lowercase
         createdAt: serverTimestamp() as any,
       };
       await setDoc(doc(db, 'users', firebaseUser.uid), wickerUserData);
@@ -102,7 +106,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const userCredential = await signInWithEmailAndPassword(auth, email, pass);
       const firebaseUser = userCredential.user;
       setCurrentUser(firebaseUser);
-      // WickerUser data will be fetched by onAuthStateChanged
+      // WickerUser data will be fetched by onAuthStateChanged, which now handles lowercase guest creation too
       setLoading(false);
       return firebaseUser;
     } catch (error) {
@@ -118,7 +122,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const userCredential = await signInAnonymously(auth);
       const firebaseUser = userCredential.user;
       setCurrentUser(firebaseUser);
-      // WickerUser for anonymous user will be created/fetched by onAuthStateChanged
+      // WickerUser for anonymous user will be created/fetched by onAuthStateChanged logic, now ensuring lowercase.
       setLoading(false);
       return firebaseUser;
     } catch (error) {
