@@ -54,7 +54,7 @@ export default function AuthPage() {
       <Card className="w-full max-w-md shadow-2xl bg-card border-border">
         <CardHeader className="text-center">
           <div className="inline-flex items-center justify-center mb-4">
-            <Image src="/logo.png" alt="Wicker Logo" width={80} height={80} className="rounded-full" />
+            <Image src="https://i.imgur.com/qRm5rG3.png" alt="Wicker Logo" width={80} height={80} className="rounded-full" />
           </div>
           <CardTitle className="text-3xl font-bold text-primary font-headline">Wicker</CardTitle>
           <CardDescription className="text-muted-foreground">Secure & Ephemeral Messaging</CardDescription>
