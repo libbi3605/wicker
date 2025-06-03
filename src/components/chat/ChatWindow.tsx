@@ -5,7 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { Clock, Flame, Eye } from 'lucide-react'; // Changed Fire to Flame
+import { Clock, Flame, Eye } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
 interface ChatWindowProps {
@@ -29,14 +29,11 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
           const isCurrentUser = msg.senderId === currentUserId;
           const senderInitial = msg.senderUsername?.substring(0, 1).toUpperCase() || '?';
           
-          // Basic ephemeral status rendering
           let ephemeralIndicator = null;
           if (msg.isBurnOnRead) {
-            ephemeralIndicator = <Flame size={12} className="text-orange-500" title="Burn on read" />; // Changed Fire to Flame
-          } else if (msg.expirationTimestamp) {
+            ephemeralIndicator = <Flame size={12} className="text-orange-500" title="Burn on read" />;
+          } else if (msg.expirationTimestamp && msg.expirationTimestamp.toDate) { // Check if toDate exists
             const isExpired = msg.expirationTimestamp.toDate() < new Date();
-            // For now, expired messages are filtered out by deletion logic (not yet fully implemented)
-            // Or simply shown with an indicator if not yet deleted.
             if (!isExpired) {
                 ephemeralIndicator = <Clock size={12} className="text-blue-500" title={`Expires ${format(msg.expirationTimestamp.toDate(), "PPp")}`} />;
             } else {
@@ -75,9 +72,12 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
                   {msg.contentType === 'file' && !msg.decryptedContent && '[File - Decryption Pending]'}
                 </p>
                 <div className="mt-1.5 flex items-center space-x-2 text-xs opacity-70">
-                  <span>{format(msg.timestamp.toDate(), 'p')}</span>
+                  {msg.timestamp && msg.timestamp.toDate ? ( // Check if timestamp and toDate exist
+                    <span>{format(msg.timestamp.toDate(), 'p')}</span>
+                  ) : (
+                    <span>Sending...</span> // Or some other placeholder
+                  )}
                   {ephemeralIndicator}
-                  {/* Basic read status - more complex logic needed for group chats */}
                   {isCurrentUser && msg.status === 'read' && <Eye size={12} title="Read"/>}
                 </div>
               </div>
