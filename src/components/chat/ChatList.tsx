@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { useToast } from '@/hooks/use-toast'; // Import useToast
 
 interface ChatListProps {
   activeChatId: string;
@@ -18,9 +19,14 @@ export default function ChatList({ activeChatId }: ChatListProps) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
   const { wickerUser } = useAuth();
+  const { toast } = useToast(); // Initialize toast
 
   useEffect(() => {
-    if (!wickerUser?.uid) return;
+    if (!wickerUser?.uid) {
+      setLoading(false); // Stop loading if no user
+      setChats([]); // Clear chats if no user
+      return;
+    }
 
     setLoading(true);
     const chatsQuery = query(
@@ -35,11 +41,17 @@ export default function ChatList({ activeChatId }: ChatListProps) {
       setLoading(false);
     }, (error) => {
       console.error("Error fetching chats:", error);
+      toast({ // Add toast notification on error
+        title: "Chat List Error",
+        description: "Could not load your chats. You might be offline or an error occurred.",
+        variant: "destructive",
+      });
+      setChats([]); // Clear chats on error
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [wickerUser?.uid]);
+  }, [wickerUser?.uid, toast]); // Add toast to dependency array
 
   const getChatNameAndAvatar = (chat: Chat) => {
     if (chat.isGroupChat) {
@@ -49,9 +61,6 @@ export default function ChatList({ activeChatId }: ChatListProps) {
         isGroup: true,
       };
     }
-    // For 1-on-1 chat, find the other participant
-    // This part requires fetching other user's details or having them denormalized in chat doc.
-    // For simplicity, we'll use a placeholder. A full implementation would fetch user profiles.
     const otherParticipantId = chat.participants.find(p => p !== wickerUser?.uid);
     const otherUserName = chat.participantDetails?.find(p => p.uid === otherParticipantId)?.username || 'User';
 
@@ -64,11 +73,11 @@ export default function ChatList({ activeChatId }: ChatListProps) {
 
 
   if (loading) {
-    return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+    return <div className="flex justify-center items-center h-full p-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
   if (chats.length === 0) {
-    return <div className="p-4 text-center text-muted-foreground">No active chats. Start a new one!</div>;
+    return <div className="p-4 text-center text-sm text-muted-foreground">No active chats. Start a new one!</div>;
   }
 
   return (
