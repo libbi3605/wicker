@@ -79,7 +79,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Create WickerUser document in Firestore
       const wickerUserData: WickerUser = {
         uid: firebaseUser.uid,
-        username: username,
+        username: username.toLowerCase(), // Store username in lowercase
         createdAt: serverTimestamp() as any, // Firestore handles this conversion
         // publicKey: await generateAndStoreKeyPair() // Implement key generation
       };
