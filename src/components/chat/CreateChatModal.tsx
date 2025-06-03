@@ -83,16 +83,40 @@ export default function CreateChatModal({ isOpen, onClose, onCreateChat }: Creat
 
   const handleSubmit = async () => {
     setIsCreatingChat(true);
-    await onCreateChat(selectedUsers, isGroupChat ? groupName : undefined);
-    setIsCreatingChat(false);
-    // onClose(); // Parent component might close it after successful creation
-    // Reset state for next time
-    setSearchTerm('');
-    setSearchResults([]);
-    setSelectedUsers([]);
-    setGroupName('');
-    setIsGroupChat(false);
+    try {
+      await onCreateChat(selectedUsers, isGroupChat ? groupName : undefined);
+      // If successful, the parent component (ChatLayout) will close the modal.
+      // Reset local form state for the next time the modal is opened.
+      setSearchTerm('');
+      setSearchResults([]);
+      setSelectedUsers([]);
+      setGroupName('');
+      setIsGroupChat(false);
+    } catch (error) {
+      // Error handling (e.g., toast message) is expected to be done in the `onCreateChat` function
+      // passed from the parent. The modal itself just needs to ensure its UI is correctly reset.
+      console.error("CreateChatModal: Error during onCreateChat call:", error);
+      // On error, selections are intentionally NOT cleared, allowing the user to retry.
+    } finally {
+      setIsCreatingChat(false); // Crucially, always reset loading state
+    }
   };
+  
+  // Effect to reset fields when the modal is closed externally (e.g. after successful chat creation)
+  // or if it's closed via the cancel button.
+  useEffect(() => {
+    if (!isOpen) {
+      // Reset all relevant state when the modal is no longer open
+      setSearchTerm('');
+      setSearchResults([]);
+      setSelectedUsers([]);
+      setGroupName('');
+      setIsGroupChat(false);
+      setIsCreatingChat(false); // Ensure creating state is also reset
+      setIsLoadingSearch(false); // Reset search loading state
+    }
+  }, [isOpen]);
+
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
