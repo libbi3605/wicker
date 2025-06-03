@@ -23,10 +23,12 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
   }, [messages]);
 
   const filteredMessages = messages.filter(msg => {
+    // Check for burn-on-read: if true and current user has read it, filter out
     if (msg.isBurnOnRead && msg.readBy && msg.readBy[currentUserId]) {
       return false; 
     }
 
+    // Check for expiration: if timestamp exists and is in the past, filter out
     if (msg.expirationTimestamp && msg.expirationTimestamp.toDate) {
       try {
         const expiryDate = msg.expirationTimestamp.toDate();
@@ -35,29 +37,27 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
         }
       } catch (e) {
         console.error("Error converting Firestore Timestamp to Date for expiration check:", e, msg.expirationTimestamp);
+        // Optionally, decide if invalid expiration means message should be hidden or shown with error
       }
     }
-    return true;
+    return true; // If neither condition met, keep the message
   });
 
 
   return (
-    <ScrollArea className="flex-1 p-4 bg-background" ref={scrollAreaRef}>
+    <ScrollArea className="flex-1 p-4 bg-background min-h-0" ref={scrollAreaRef}> {/* Added min-h-0 */}
       <div className="space-y-1">
         {filteredMessages.map((msg, index) => {
           const isCurrentUser = msg.senderId === currentUserId;
           const senderInitial = msg.senderUsername?.substring(0, 1).toUpperCase() || '?';
           
           const prevMessage = filteredMessages[index - 1];
-          const nextMessage = filteredMessages[index + 1];
+          // const nextMessage = filteredMessages[index + 1]; // Not strictly needed for current styling
 
           const isFirstInSenderBlock = index === 0 || prevMessage?.senderId !== msg.senderId;
-          // const isLastInSenderBlock = index === filteredMessages.length - 1 || nextMessage?.senderId !== msg.senderId; // Not strictly needed for simpler styling
-
+          
           const showAvatarAndName = !isCurrentUser && isFirstInSenderBlock;
-          // For current user, we might not always show avatar, or only at end of block.
-          // Let's simplify: current user messages don't show an avatar next to them to save space and look more like Telegram.
-
+          
           let ephemeralIndicator = null;
           if (msg.isBurnOnRead) {
             ephemeralIndicator = <Flame size={12} className="text-orange-500" title="Burn on read" />;
@@ -67,6 +67,8 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
                 if (isValid(expiryDate) && expiryDate >= new Date()) { 
                     ephemeralIndicator = <Clock size={12} className="text-blue-500" title={`Expires ${format(expiryDate, "PPp")}`} />;
                 } else if (isValid(expiryDate) && expiryDate < new Date()) {
+                    // Message has expired but somehow wasn't filtered out - this case should ideally not be reached
+                    // if filtering logic above is correct. Render as expired for safety.
                     ephemeralIndicator = <Clock size={12} className="text-muted-foreground opacity-50" title={`Expired`} />;
                 }
             } catch (e) {
@@ -80,7 +82,7 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
               className={cn(
                 'flex items-end space-x-2', 
                 isCurrentUser ? 'justify-end' : 'justify-start',
-                isFirstInSenderBlock ? 'mt-3' : 'mt-0.5' // More margin between different sender blocks
+                isFirstInSenderBlock ? 'mt-3' : 'mt-0.5' 
               )}
             >
               {showAvatarAndName && (
@@ -90,7 +92,6 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
                 </Avatar>
               )}
               {!isCurrentUser && !showAvatarAndName && (
-                // Placeholder to align messages if avatar isn't shown but it's other user's message block
                 <div className="w-8 mr-2"></div> 
               )}
 
@@ -100,8 +101,6 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
                   isCurrentUser
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-card text-card-foreground border'
-                  // Removed complex conditional rounding for tails
-                  // Standard rounding for all bubbles: rounded-lg
                 )}
               >
                 {!isCurrentUser && msg.senderUsername && showAvatarAndName && (
@@ -122,10 +121,8 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
                   {isCurrentUser && msg.status === 'read' && <Eye size={12} title="Read"/>}
                 </div>
               </div>
-
-              {/* Removed current user avatar display next to messages for a cleaner, more Telegram-like look */}
-               {isCurrentUser && ( // Keep a placeholder for alignment if needed, or remove if bubbles align well without it
-                <div className="w-8 ml-2 h-8"></div> // Adjusted to ensure consistent spacing if other side has avatar
+              {isCurrentUser && (
+                <div className="w-8 ml-2 h-8"></div> 
               )}
             </div>
           );
