@@ -50,13 +50,15 @@ export default function ChatConversationPage() {
         return;
     }
     setLoadingChat(true);
-    processedMessageIds.current.clear(); // Reset processed messages when chat ID changes
+    processedMessageIds.current.clear(); 
 
     const chatDocRef = doc(db, 'chats', chatId);
     const unsubscribeChatDetails = onSnapshot(chatDocRef, async (docSnap) => {
       if (docSnap.exists()) {
         const chatData = { id: docSnap.id, ...docSnap.data() } as Chat;
         
+        // Attempt to fetch full participant details if they are missing or empty
+        // and there are participants UIDs available.
         if ((!chatData.participantDetails || chatData.participantDetails.length === 0) && chatData.participants && chatData.participants.length > 0) {
           try {
             const participantDetailsPromises = chatData.participants.map(async (uid) => {
@@ -65,36 +67,37 @@ export default function ChatConversationPage() {
             });
             const resolvedDetails = (await Promise.all(participantDetailsPromises)).filter(Boolean) as WickerUser[];
             
-            if (resolvedDetails.length > 0) { // Ensure some details were resolved
-                chatData.participantDetails = resolvedDetails.map(u => ({ uid: u.uid, username: u.username, publicKey: u.publicKey }));
+            if (resolvedDetails.length > 0) {
+                chatData.participantDetails = resolvedDetails.map(u => ({ uid: u.uid, username: u.username, publicKey: u.publicKey || null }));
                 setChatDetails(chatData);
-            } else if (chatData.participants.length > 0) { // If participants exist but no details resolved
+            } else { 
+                // Could not resolve any details, but participants array exists.
+                // Fallback to using the chatData as is (it will have participant UIDs but participantDetails might be empty/stale).
                 console.warn("Could not resolve any participant details for chat:", chatId);
                 toast({ title: "Chat Load Warning", description: "Could not load full participant details. Some information may be missing.", variant: "default"});
-                setChatDetails(chatData); // Set with what we have, UI might show UIDs
-            } else { // No participants to begin with
-                setChatDetails(chatData);
+                setChatDetails(chatData); // Set with original chatData
             }
-
           } catch (error: any) {
             console.error("Error fetching full participant details:", error);
             toast({ title: "Chat Load Error", description: `Could not load full participant details: ${error.message}. Chat may be incomplete.`, variant: "destructive"});
-            setChatDetails(null); 
-            setLoadingChat(false);
-            return; 
+            // Fallback: use the original chatData from the snapshot, even if participantDetails are missing/empty.
+            // This is crucial to prevent setting chatDetails to null and showing the error page if only enrichment fails.
+            setChatDetails(chatData); // chatData here is from the initial docSnap.data()
           }
         } else {
+            // Participant details already exist or no participants to fetch details for.
             setChatDetails(chatData); 
         }
       } else {
         setChatDetails(null);
         toast({ title: "Chat not found", description: "This chat may no longer exist.", variant: "destructive" });
       }
+      // setLoadingChat(false); // Moved to messages listener completion
     }, (error) => {
       console.error("Error fetching chat details snapshot:", error);
       toast({ title: "Chat Load Error", description: "Could not load chat details. You might be offline.", variant: "destructive"});
       setChatDetails(null);
-      setLoadingChat(false);
+      setLoadingChat(false); // Set loading to false on error
     });
 
     const messagesQuery = query(
@@ -119,17 +122,15 @@ export default function ChatConversationPage() {
             }
           }
           
-          // Mark as read logic
           if (msgData.senderId !== wickerUser.uid && (!msgData.readBy || !msgData.readBy[wickerUser.uid])) {
-            if (!processedMessageIds.current.has(msgData.id)) { // Check if already processed
+            if (!processedMessageIds.current.has(msgData.id)) { 
               const messageRef = doc(db, `chats/${chatId}/messages`, msgData.id);
               batch.update(messageRef, {
                 [`readBy.${wickerUser.uid}`]: serverTimestamp(),
-                status: 'read' // Simplified status, might need more complex logic for groups
+                status: 'read' 
               });
               shouldCommitBatch = true;
-              processedMessageIds.current.add(msgData.id); // Mark as processed
-              // Update local copy immediately for UI responsiveness
+              processedMessageIds.current.add(msgData.id); 
               msgData.readBy = { ...msgData.readBy, [wickerUser.uid]: serverTimestamp() as any };
               msgData.status = 'read';
             }
@@ -186,18 +187,16 @@ export default function ChatConversationPage() {
         senderUsername: wickerUser.username,
         encryptedContent,
         contentType: 'text',
-        timestamp: serverTimestamp() as any, // Firestore will convert this
+        timestamp: serverTimestamp() as any, 
         isBurnOnRead: ephemeralSettings?.isBurnOnRead || false,
         expirationTimestamp: ephemeralSettings?.expirationTimestamp || null,
         status: 'sent',
-        readBy: {}, // Initialize readBy
+        readBy: {}, 
       };
       await addDoc(collection(db, `chats/${chatId}/messages`), messageData);
       
-      // Determine last message text, prioritizing decrypted content if available
-      // For ephemeral messages, consider if the snippet should be generic
       let lastMessageText = content.substring(0, 50);
-      if (messageData.isBurnOnRead || (messageData.expirationTimestamp && messageData.expirationTimestamp.toDate() <= new Date(Date.now() + 60000))) { // soon to expire
+      if (messageData.isBurnOnRead || (messageData.expirationTimestamp && messageData.expirationTimestamp.toDate && messageData.expirationTimestamp.toDate() <= new Date(Date.now() + 60000))) { 
          lastMessageText = "Ephemeral message";
       }
 
@@ -250,7 +249,7 @@ export default function ChatConversationPage() {
     );
   }
   
-  if (loadingChat && !chatDetails) { // Adjusted loading condition
+  if (loadingChat && !chatDetails) { 
     return (
       <div className="flex-1 flex items-center justify-center p-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -264,7 +263,7 @@ export default function ChatConversationPage() {
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
         <h2 className="text-2xl font-semibold text-destructive">Chat Error</h2>
         <p className="text-muted-foreground max-w-md">
-          Could not load chat details. The chat may not exist, participant data could not be fully loaded, or you might be offline.
+          Could not load chat details. The chat may not exist, or you might be offline.
         </p>
       </div>
     );
