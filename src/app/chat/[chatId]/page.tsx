@@ -8,7 +8,7 @@ import type { Chat, ChatMessage, WickerUser } from '@/lib/types';
 import { EphemeralSettingsSuggestion } from '@/lib/types';
 import { suggestEphemeralSettings } from '@/ai/flows/suggest-ephemeral-settings'; // AI Flow
 import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { Loader2 } from 'lucide-react'; // Removed ShieldAlert as it's not used in simplified errors
+import { Loader2 } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
@@ -66,30 +66,43 @@ export default function ChatConversationPage() {
 
 
   useEffect(() => {
-    if (!chatId || !wickerUser.uid) return; 
-    setLoadingChat(true); 
+    if (!chatId || !wickerUser.uid) return;
+    setLoadingChat(true);
 
     const chatDocRef = doc(db, 'chats', chatId);
     const unsubscribeChatDetails = onSnapshot(chatDocRef, async (docSnap) => {
       if (docSnap.exists()) {
         const chatData = { id: docSnap.id, ...docSnap.data() } as Chat;
-        if (!chatData.participantDetails && chatData.participants) {
+        // Attempt to fetch participant details if not already present or if participants array exists
+        if ((!chatData.participantDetails || chatData.participantDetails.length === 0) && chatData.participants && chatData.participants.length > 0) {
           try {
             const participantDetailsPromises = chatData.participants.map(async (uid) => {
               const userDoc = await getDoc(doc(db, 'users', uid));
               return userDoc.exists() ? userDoc.data() as WickerUser : null;
             });
             const resolvedDetails = (await Promise.all(participantDetailsPromises)).filter(Boolean) as WickerUser[];
+            if (resolvedDetails.length !== chatData.participants.length && chatData.participants.length > 0) {
+                 // This implies some user docs might not have been found or fetched, which could be an issue
+                 console.warn("Not all participant details could be resolved for chat:", chatId);
+            }
             chatData.participantDetails = resolvedDetails.map(u => ({ uid: u.uid, username: u.username, publicKey: u.publicKey }));
+            setChatDetails(chatData);
           } catch (error) {
-            console.error("Error fetching participant details:", error);
+            console.error("Error fetching full participant details:", error);
+            toast({ title: "Chat Load Error", description: "Could not load full participant details. Chat may be incomplete.", variant: "destructive"});
+            // Set chatDetails to null if fetching participant details fails critically
+            setChatDetails(null); 
+            setLoadingChat(false);
+            return; // Exit if participant details fetch fails
           }
+        } else {
+            setChatDetails(chatData); // Set if details already exist or no participants to fetch
         }
-        setChatDetails(chatData);
       } else {
         setChatDetails(null);
         toast({ title: "Chat not found", description: "This chat may no longer exist.", variant: "destructive" });
       }
+      // setLoadingChat(false); // Moved setting loading false to after message logic or error cases
     }, (error) => {
       console.error("Error fetching chat details snapshot:", error);
       toast({ title: "Chat Load Error", description: "Could not load chat details. You might be offline.", variant: "destructive"});
@@ -125,7 +138,7 @@ export default function ChatConversationPage() {
          });
       }
       setMessages(newMessages);
-      setLoadingChat(false);
+      setLoadingChat(false); // Set loading to false after messages are processed
     }, (error) => {
       console.error("Error fetching messages snapshot:", error);
       toast({ title: "Message Load Error", description: "Could not load messages. You might be offline.", variant: "destructive"});
@@ -140,7 +153,11 @@ export default function ChatConversationPage() {
   }, [chatId, wickerUser.uid, sharedSecret, toast]);
 
   const handleSendMessage = useCallback(async (content: string, ephemeralSettings?: Partial<ChatMessage>) => {
-    if (!chatId || !wickerUser.uid || !content.trim() || !sharedSecret) {
+    if (!wickerUser || !wickerUser.uid) {
+        toast({ title: "User Error", description: "User profile not available. Cannot send message.", variant: "destructive"});
+        return;
+    }
+    if (!chatId || !content.trim() || !sharedSecret) {
         if (!sharedSecret) {
             toast({ title: "Encryption Error", description: "Secure channel not ready. Cannot send message.", variant: "destructive"});
         }
@@ -204,7 +221,7 @@ export default function ChatConversationPage() {
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
         <h2 className="text-2xl font-semibold text-destructive">Chat Error</h2>
         <p className="text-muted-foreground max-w-md">
-          Could not load chat details. The chat may not exist or you might be offline.
+          Could not load chat details. The chat may not exist, participant data could not be fully loaded, or you might be offline.
         </p>
       </div>
     );
