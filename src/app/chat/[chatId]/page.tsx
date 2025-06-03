@@ -7,10 +7,10 @@ import { db } from '@/lib/firebase';
 import type { Chat, ChatMessage, WickerUser } from '@/lib/types';
 import { EphemeralSettingsSuggestion } from '@/lib/types';
 import { suggestEphemeralSettings } from '@/ai/flows/suggest-ephemeral-settings'; // AI Flow
-import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 import { useParams } from 'next/navigation';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { encryptMessage, decryptMessage, generateAESKeyString, importAESKeyFromString } from '@/lib/crypto';
 
@@ -23,29 +23,8 @@ export default function ChatConversationPage() {
   const [loadingChat, setLoadingChat] = useState(true);
   const [sharedSecret, setSharedSecret] = useState<CryptoKey | null>(null);
   const { toast } = useToast();
+  const processedMessageIds = useRef(new Set<string>());
 
-  // Early exit if auth is still loading
-  if (authLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center p-4">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <p className="ml-3 text-muted-foreground">Loading user profile...</p>
-      </div>
-    );
-  }
-
-  // Early exit if wickerUser (user profile from Firestore) is not available after auth loading
-  if (!wickerUser) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-        <h2 className="text-2xl font-semibold text-destructive">User Profile Error</h2>
-        <p className="text-muted-foreground max-w-md">
-          Could not load your user profile. You might be offline or an authentication issue occurred.
-        </p>
-        <p className="text-sm mt-4 text-muted-foreground">Please try refreshing or check your internet connection.</p>
-      </div>
-    );
-  }
 
   useEffect(() => {
     const setupEncryptionKey = async () => {
@@ -66,14 +45,12 @@ export default function ChatConversationPage() {
 
 
   useEffect(() => {
-    if (!chatId || !wickerUser || !wickerUser.uid) {
-        // If wickerUser is null or uid is not available, don't proceed with chat loading.
-        // The main component render logic already handles the case where wickerUser is null.
-        // Set loadingChat to false if we can't proceed, to prevent infinite loading state.
+    if (!chatId || !wickerUser) {
         setLoadingChat(false);
         return;
     }
     setLoadingChat(true);
+    processedMessageIds.current.clear(); // Reset processed messages when chat ID changes
 
     const chatDocRef = doc(db, 'chats', chatId);
     const unsubscribeChatDetails = onSnapshot(chatDocRef, async (docSnap) => {
@@ -87,16 +64,23 @@ export default function ChatConversationPage() {
               return userDoc.exists() ? userDoc.data() as WickerUser : null;
             });
             const resolvedDetails = (await Promise.all(participantDetailsPromises)).filter(Boolean) as WickerUser[];
-            if (resolvedDetails.length !== chatData.participants.length && chatData.participants.length > 0) {
-                 console.warn("Not all participant details could be resolved for chat:", chatId);
+            
+            if (resolvedDetails.length > 0) { // Ensure some details were resolved
+                chatData.participantDetails = resolvedDetails.map(u => ({ uid: u.uid, username: u.username, publicKey: u.publicKey }));
+                setChatDetails(chatData);
+            } else if (chatData.participants.length > 0) { // If participants exist but no details resolved
+                console.warn("Could not resolve any participant details for chat:", chatId);
+                toast({ title: "Chat Load Warning", description: "Could not load full participant details. Some information may be missing.", variant: "default"});
+                setChatDetails(chatData); // Set with what we have, UI might show UIDs
+            } else { // No participants to begin with
+                setChatDetails(chatData);
             }
-            chatData.participantDetails = resolvedDetails.map(u => ({ uid: u.uid, username: u.username, publicKey: u.publicKey }));
-            setChatDetails(chatData);
-          } catch (error) {
+
+          } catch (error: any) {
             console.error("Error fetching full participant details:", error);
-            toast({ title: "Chat Load Error", description: "Could not load full participant details. Chat may be incomplete.", variant: "destructive"});
+            toast({ title: "Chat Load Error", description: `Could not load full participant details: ${error.message}. Chat may be incomplete.`, variant: "destructive"});
             setChatDetails(null); 
-            setLoadingChat(false); // Ensure loading is stopped on critical error
+            setLoadingChat(false);
             return; 
           }
         } else {
@@ -106,7 +90,6 @@ export default function ChatConversationPage() {
         setChatDetails(null);
         toast({ title: "Chat not found", description: "This chat may no longer exist.", variant: "destructive" });
       }
-      // setLoadingChat(false); // This will be handled by the messages snapshot or error cases
     }, (error) => {
       console.error("Error fetching chat details snapshot:", error);
       toast({ title: "Chat Load Error", description: "Could not load chat details. You might be offline.", variant: "destructive"});
@@ -121,7 +104,10 @@ export default function ChatConversationPage() {
 
     const unsubscribeMessages = onSnapshot(messagesQuery, async (snapshot) => {
       const newMessages: ChatMessage[] = [];
-      if (sharedSecret) {
+      const batch = writeBatch(db);
+      let shouldCommitBatch = false;
+
+      if (sharedSecret && wickerUser) {
         for (const docSnap of snapshot.docs) {
           const msgData = { id: docSnap.id, ...docSnap.data() } as ChatMessage;
           if (msgData.encryptedContent) {
@@ -132,16 +118,40 @@ export default function ChatConversationPage() {
               msgData.decryptedContent = "[Failed to decrypt message]";
             }
           }
+          
+          // Mark as read logic
+          if (msgData.senderId !== wickerUser.uid && (!msgData.readBy || !msgData.readBy[wickerUser.uid])) {
+            if (!processedMessageIds.current.has(msgData.id)) { // Check if already processed
+              const messageRef = doc(db, `chats/${chatId}/messages`, msgData.id);
+              batch.update(messageRef, {
+                [`readBy.${wickerUser.uid}`]: serverTimestamp(),
+                status: 'read' // Simplified status, might need more complex logic for groups
+              });
+              shouldCommitBatch = true;
+              processedMessageIds.current.add(msgData.id); // Mark as processed
+              // Update local copy immediately for UI responsiveness
+              msgData.readBy = { ...msgData.readBy, [wickerUser.uid]: serverTimestamp() as any };
+              msgData.status = 'read';
+            }
+          }
           newMessages.push(msgData);
         }
       } else {
          snapshot.docs.forEach(docSnap => {
             const msgData = { id: docSnap.id, ...docSnap.data() } as ChatMessage;
-            msgData.decryptedContent = "[Encryption key not ready]";
+            msgData.decryptedContent = "[Encryption key not ready or user not loaded]";
             newMessages.push(msgData);
          });
       }
       setMessages(newMessages);
+      if (shouldCommitBatch) {
+        try {
+            await batch.commit();
+        } catch (error) {
+            console.error("Error committing read status updates:", error);
+            toast({ title: "Read Status Error", description: "Could not update read statuses.", variant: "destructive" });
+        }
+      }
       setLoadingChat(false); 
     }, (error) => {
       console.error("Error fetching messages snapshot:", error);
@@ -154,7 +164,7 @@ export default function ChatConversationPage() {
       unsubscribeChatDetails();
       unsubscribeMessages();
     };
-  }, [chatId, wickerUser, sharedSecret, toast]); // Changed wickerUser.uid to wickerUser
+  }, [chatId, wickerUser, sharedSecret, toast]);
 
   const handleSendMessage = useCallback(async (content: string, ephemeralSettings?: Partial<ChatMessage>) => {
     if (!wickerUser || !wickerUser.uid) {
@@ -176,15 +186,25 @@ export default function ChatConversationPage() {
         senderUsername: wickerUser.username,
         encryptedContent,
         contentType: 'text',
-        timestamp: serverTimestamp() as any,
+        timestamp: serverTimestamp() as any, // Firestore will convert this
         isBurnOnRead: ephemeralSettings?.isBurnOnRead || false,
         expirationTimestamp: ephemeralSettings?.expirationTimestamp || null,
         status: 'sent',
+        readBy: {}, // Initialize readBy
       };
       await addDoc(collection(db, `chats/${chatId}/messages`), messageData);
+      
+      // Determine last message text, prioritizing decrypted content if available
+      // For ephemeral messages, consider if the snippet should be generic
+      let lastMessageText = content.substring(0, 50);
+      if (messageData.isBurnOnRead || (messageData.expirationTimestamp && messageData.expirationTimestamp.toDate() <= new Date(Date.now() + 60000))) { // soon to expire
+         lastMessageText = "Ephemeral message";
+      }
+
+
       await updateDoc(doc(db, 'chats', chatId), {
         lastMessage: {
-          text: content.substring(0, 50),
+          text: lastMessageText,
           senderId: wickerUser.uid,
           timestamp: serverTimestamp(),
           contentType: 'text',
@@ -209,8 +229,28 @@ export default function ChatConversationPage() {
     }
   };
 
-  // Loading state for chat data (after user profile is confirmed loaded)
-  if (loadingChat) {
+  if (authLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-4">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="ml-3 text-muted-foreground">Loading user profile...</p>
+      </div>
+    );
+  }
+
+  if (!wickerUser) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+        <h2 className="text-2xl font-semibold text-destructive">User Profile Error</h2>
+        <p className="text-muted-foreground max-w-md">
+          Could not load your user profile. You might be offline or an authentication issue occurred.
+        </p>
+        <p className="text-sm mt-4 text-muted-foreground">Please try refreshing or check your internet connection.</p>
+      </div>
+    );
+  }
+  
+  if (loadingChat && !chatDetails) { // Adjusted loading condition
     return (
       <div className="flex-1 flex items-center justify-center p-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -219,7 +259,6 @@ export default function ChatConversationPage() {
     );
   }
 
-  // If loading chat data is complete, but chatDetails is still null
   if (!chatDetails) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
@@ -231,7 +270,6 @@ export default function ChatConversationPage() {
     );
   }
 
-  // wickerUser is guaranteed non-null by early return. chatDetails is guaranteed non-null here.
   const chatName = chatDetails.isGroupChat
     ? chatDetails.groupName
     : chatDetails.participantDetails?.find(p => p.uid !== wickerUser.uid)?.username || 'Chat';
