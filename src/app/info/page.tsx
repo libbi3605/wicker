@@ -13,7 +13,7 @@ export default function InfoPage() {
           <div className="inline-flex items-center justify-center mb-3">
             <Image src="https://i.imgur.com/qRm5rG3.png" alt="Wicker Logo" width={80} height={80} className="rounded-md" />
           </div>
-          <CardTitle className="text-3xl font-bold text-primary font-headline">
+          <CardTitle className="text-3xl font-bold text-primary font-headline uppercase tracking-widest">
             Wicker: Security & Privacy
           </CardTitle>
           <CardDescription className="text-md text-muted-foreground pt-1">

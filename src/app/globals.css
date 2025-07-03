@@ -29,52 +29,52 @@ body {
     --destructive-foreground-light: 0 0% 98%;
     --ring-light: 274 100% 45.5%;
 
-    /* Dark Theme (New Default - Inspired by Wicker Logo) */
-    --background: 220 25% 10%; /* Very Dark Blue/Almost Black */
-    --foreground: 200 80% 90%; /* Light Cyan/Off-White */
+    /* New Dark Theme (Inspired by new Wicker Logo) */
+    --background: 260 11% 12%; /* Dark Purple/Black */
+    --foreground: 260 10% 88%; /* Off-White */
 
-    --muted: 220 20% 20%;
-    --muted-foreground: 210 15% 65%; /* Slightly lighter for better readability */
+    --muted: 260 11% 20%;
+    --muted-foreground: 260 10% 65%;
 
-    --popover: 220 25% 8%;
-    --popover-foreground: 200 80% 90%;
+    --popover: 260 11% 10%;
+    --popover-foreground: 260 10% 88%;
 
-    --card: 220 25% 12%; /* Slightly lighter than background */
-    --card-foreground: 200 80% 90%;
+    --card: 260 11% 15%;
+    --card-foreground: 260 10% 88%;
 
-    --border: 220 20% 25%; /* Subtle border */
-    --input: 220 20% 18%; /* Input background, slightly different from card */
+    --border: 260 11% 22%;
+    --input: 260 11% 18%;
 
-    --primary: 195 90% 50%; /* Bright Cyan from logo */
-    --primary-foreground: 220 25% 10%; /* Dark text for on primary buttons */
+    --primary: 343 100% 61%; /* Vibrant Pink/Red */
+    --primary-foreground: 343 100% 10%; /* Dark text for primary buttons */
 
-    --secondary: 195 70% 35%; /* Darker Cyan */
-    --secondary-foreground: 200 80% 90%;
+    --secondary: 343 80% 45%; /* Darker Pink/Red */
+    --secondary-foreground: 260 10% 90%;
 
-    --accent: 190 100% 60%; /* Vibrant Cyan/Blue for accents */
-    --accent-foreground: 220 25% 10%; /* Dark text for on accent buttons */
+    --accent: 343 100% 61%; /* Vibrant Pink/Red */
+    --accent-foreground: 343 100% 10%; /* Dark text for accent buttons */
 
     --destructive: 0 70% 55%;
     --destructive-foreground: 0 0% 98%;
 
-    --ring: 195 90% 60%; /* Ring color based on primary */
+    --ring: 343 100% 70%;
 
     --radius: 0.5rem;
 
-    --sidebar-background: 220 25% 8%;
-    --sidebar-foreground: 200 80% 90%;
-    --sidebar-primary: 195 90% 50%;
-    --sidebar-primary-foreground: 220 25% 10%;
-    --sidebar-accent: 190 100% 60%;
-    --sidebar-accent-foreground: 220 25% 10%;
-    --sidebar-border: 220 20% 20%; /* Darker border for sidebar */
-    --sidebar-ring: 195 90% 60%;
+    --sidebar-background: 260 11% 10%;
+    --sidebar-foreground: 260 10% 88%;
+    --sidebar-primary: 343 100% 61%;
+    --sidebar-primary-foreground: 343 100% 10%;
+    --sidebar-accent: 343 100% 61%;
+    --sidebar-accent-foreground: 343 100% 10%;
+    --sidebar-border: 260 11% 18%;
+    --sidebar-ring: 343 100% 70%;
 
-    --chart-1: 195 90% 50%;
-    --chart-2: 180 80% 45%;
-    --chart-3: 210 70% 60%;
-    --chart-4: 200 100% 70%;
-    --chart-5: 190 95% 55%;
+    --chart-1: 343 100% 61%;
+    --chart-2: 343 80% 55%;
+    --chart-3: 343 70% 50%;
+    --chart-4: 350 100% 70%;
+    --chart-5: 350 95% 65%;
   }
 
   /* Specific dark class if needed, but :root is now dark by default */
