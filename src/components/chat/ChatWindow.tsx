@@ -1,4 +1,3 @@
-
 "use client";
 import type { ChatMessage } from '@/lib/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
