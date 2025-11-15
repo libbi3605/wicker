@@ -71,8 +71,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } else {
           setWickerUser(null);
         }
-        setLoading(false);
       }
+          setLoading(false);
     );
 
     return () => subscription?.unsubscribe();
