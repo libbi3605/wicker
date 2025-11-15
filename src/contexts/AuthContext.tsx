@@ -22,7 +22,7 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const formatEmailForSupabase = (username: string) => `${username.toLowerCase()}@wicker.app`;
+const formatEmailForSupabase = (username: string) => `${username.toLowerCase()}@example.com`
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<any>(null);
