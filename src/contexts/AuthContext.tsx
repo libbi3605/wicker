@@ -95,13 +95,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setCurrentUser(user);
         setWickerUser(wickerUserData);
       }
-      setLoading(false);
       return user;
     } catch (error) {
       console.error('Error signing up:', error);
-      setLoading(false);
       throw error;
     }
+      finally { setLoading(false); }
   };
 
   const signIn = async (username: string, pass: string) => {
@@ -116,13 +115,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (error) throw error;
       const user = data.user;
       setCurrentUser(user);
-      setLoading(false);
       return user;
     } catch (error) {
       console.error('Error signing in:', error);
-      setLoading(false);
       throw error;
     }
+      finally { setLoading(false); }
   };
 
   const signInAsGuest = async () => {
@@ -132,13 +130,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (error) throw error;
       const user = data.user;
       setCurrentUser(user);
-      setLoading(false);
       return user;
     } catch (error) {
       console.error('Error signing in anonymously:', error);
-      setLoading(false);
       throw error;
     }
+      finally { setLoading(false); }
   };
 
   const signOut = async () => {
