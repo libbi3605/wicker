@@ -68,10 +68,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               variant: 'destructive',
             });
           }
-        } else {
-          setWickerUser(null);
-        }
-      }
           setLoading(false);
     );
 
