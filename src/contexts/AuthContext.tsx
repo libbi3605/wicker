@@ -67,7 +67,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               description: 'Could not load your profile.',
               variant: 'destructive',
             });
-          }
           setLoading(false);
     );
 
