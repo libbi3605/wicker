@@ -68,7 +68,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               variant: 'destructive',
             });
           setLoading(false);
-}
+            }
+              
     return () => subscription?.unsubscribe();
   }, [toast]);
 
