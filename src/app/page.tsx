@@ -6,18 +6,18 @@ import { useEffect } from 'react';
 import Image from 'next/image';
 
 export default function HomePage() {
-  const { currentUser, loading } = useAuth();
+  const { wickerUser, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading) {
-      if (currentUser) {
+      if (wickerUser) {
         router.replace('/chat');
       } else {
         router.replace('/auth');
       }
     }
-  }, [currentUser, loading, router]);
+  }, [wickerUser, loading, router]);
 
   return (
     <div className="flex h-screen w-screen flex-col items-center justify-center bg-background space-y-6">

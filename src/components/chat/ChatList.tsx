@@ -1,14 +1,12 @@
-
 "use client";
 import { useAuth } from '@/hooks/useAuth';
-import { db } from '@/lib/firebase';
-import type { Chat } from '@/lib/types';
-import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { createClient } from '@/lib/supabase/client';
+import type { Conversation, ConversationParticipant } from '@/lib/types';
 import { MessageSquareText, Users, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { formatDistanceToNowStrict } from 'date-fns';
+import { formatDistanceToNowStrict, parseISO } from 'date-fns';
 import { useToast } from '@/hooks/use-toast'; 
 
 interface ChatListProps {
@@ -16,55 +14,71 @@ interface ChatListProps {
 }
 
 export default function ChatList({ activeChatId }: ChatListProps) {
-  const [chats, setChats] = useState<Chat[]>([]);
+  const [chats, setChats] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const { wickerUser } = useAuth();
   const { toast } = useToast(); 
+  const supabase = createClient();
 
   useEffect(() => {
-    if (!wickerUser || !wickerUser.uid) {
-      setLoading(false); 
-      setChats([]); 
+    if (!wickerUser) {
+      setLoading(false);
+      setChats([]);
       return;
     }
 
     setLoading(true);
-    const chatsQuery = query(
-      collection(db, 'chats'),
-      where('participants', 'array-contains', wickerUser.uid),
-      orderBy('updatedAt', 'desc')
-    );
+    
+    const fetchConversations = async () => {
+      const { data, error } = await supabase
+        .rpc('get_user_conversations_with_details');
 
-    const unsubscribe = onSnapshot(chatsQuery, (snapshot) => {
-      const chatsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Chat));
-      setChats(chatsData);
+      if (error) {
+        console.error("Error fetching conversations:", error);
+        toast({ 
+          title: "Chat List Error",
+          description: "Could not load your chats. You might be offline or an error occurred.",
+          variant: "destructive",
+        });
+        setChats([]);
+      } else {
+        setChats(data || []);
+      }
       setLoading(false);
-    }, (error) => {
-      console.error("Error fetching chats:", error);
-      toast({ 
-        title: "Chat List Error",
-        description: "Could not load your chats. You might be offline or an error occurred.",
-        variant: "destructive",
+    };
+
+    fetchConversations();
+
+    const channel = supabase
+      .channel('conversations_and_messages_for_user')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, fetchConversations)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchConversations)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_participants' }, fetchConversations)
+      .subscribe((status, err) => {
+        if (err) {
+          console.error('Subscription error:', err);
+          toast({ title: 'Real-time Error', description: 'Could not connect to real-time updates.', variant: 'destructive'});
+        }
       });
-      setChats([]); 
-      setLoading(false);
-    });
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
 
-    return () => unsubscribe();
-  }, [wickerUser, toast]); // Changed wickerUser.uid to wickerUser
+  }, [wickerUser, toast, supabase]);
 
-  const getChatNameAndAvatar = (chat: Chat) => {
-    if (chat.isGroupChat) {
+  const getChatNameAndAvatar = (chat: Conversation) => {
+    if (chat.is_group_chat) {
       return {
-        name: chat.groupName || 'Group Chat',
-        avatarInitial: chat.groupName?.substring(0, 1).toUpperCase() || 'G',
+        name: chat.group_name || 'Group Chat',
+        avatarInitial: chat.group_name?.substring(0, 1).toUpperCase() || 'G',
         isGroup: true,
       };
     }
-    // Ensure wickerUser and its uid are available before accessing them
-    const currentUserId = wickerUser?.uid;
-    const otherParticipantId = currentUserId ? chat.participants.find(p => p !== currentUserId) : undefined;
-    const otherUserName = chat.participantDetails?.find(p => p.uid === otherParticipantId)?.username || 'User';
+
+    const currentUserId = wickerUser?.id;
+    const otherParticipant = chat.participants?.find(p => p.user_id !== currentUserId);
+    const otherUserName = otherParticipant?.username || 'User';
 
     return {
       name: otherUserName,
@@ -72,7 +86,6 @@ export default function ChatList({ activeChatId }: ChatListProps) {
       isGroup: false,
     };
   };
-
 
   if (loading) {
     return <div className="flex justify-center items-center h-full p-4"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
@@ -101,14 +114,14 @@ export default function ChatList({ activeChatId }: ChatListProps) {
             <div className="flex-1 min-w-0">
               <div className="flex justify-between items-center">
                 <p className="text-sm font-medium truncate">{name}</p>
-                {chat.lastMessage?.timestamp && (
+                {chat.last_message_timestamp && (
                   <p className="text-xs text-muted-foreground whitespace-nowrap">
-                    {formatDistanceToNowStrict(chat.lastMessage.timestamp.toDate(), { addSuffix: true })}
+                    {formatDistanceToNowStrict(parseISO(chat.last_message_timestamp), { addSuffix: true })}
                   </p>
                 )}
               </div>
               <p className={`text-xs truncate ${isActive ? 'text-accent-foreground/80' : 'text-muted-foreground'}`}>
-                {chat.lastMessage?.text || (chat.lastMessage?.contentType === 'image' ? 'Image' : chat.lastMessage?.contentType === 'file' ? 'File' : 'No messages yet')}
+                {chat.last_message_text || (chat.last_message_content_type === 'image' ? 'Image' : chat.last_message_content_type === 'file' ? 'File' : 'No messages yet')}
               </p>
             </div>
              {isGroup ? <Users size={16} className="text-muted-foreground" /> : <MessageSquareText size={16} className="text-muted-foreground" />}

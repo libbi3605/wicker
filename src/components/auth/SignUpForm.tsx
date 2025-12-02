@@ -1,4 +1,3 @@
-
 "use client";
 import { useAuth } from '@/hooks/useAuth';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -14,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 
 const formSchema = z.object({
   username: z.string().min(3, { message: 'Username must be at least 3 characters.' }).max(20, { message: 'Username must be at most 20 characters.'}),
+  email: z.string().email({ message: "Please enter a valid email address." }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
   confirmPassword: z.string(),
 }).refine(data => data.password === data.confirmPassword, {
@@ -33,13 +33,13 @@ export default function SignUpForm() {
 
   const form = useForm<SignUpFormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { username: '', password: '', confirmPassword: '' },
+    defaultValues: { username: '', email: '', password: '', confirmPassword: '' },
   });
 
   const onSubmit = async (data: SignUpFormValues) => {
     setLoading(true);
     try {
-      await signUp(data.username, data.password);
+      await signUp(data.username, data.password, data.email);
       toast({ title: 'Account Created', description: 'Welcome to Wicker!' });
       router.push('/chat');
     } catch (error: any) {
@@ -64,6 +64,19 @@ export default function SignUpForm() {
               <FormLabel className="text-foreground/80">Username</FormLabel>
               <FormControl>
                 <Input placeholder="choose_a_username" {...field} className="bg-input text-foreground placeholder:text-muted-foreground"/>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="email"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-foreground/80">Email</FormLabel>
+              <FormControl>
+                <Input placeholder="your@email.com" {...field} className="bg-input text-foreground placeholder:text-muted-foreground"/>
               </FormControl>
               <FormMessage />
             </FormItem>

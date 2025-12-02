@@ -1,37 +1,38 @@
-
 "use client";
 import ChatWindow from '@/components/chat/ChatWindow';
 import MessageInput from '@/components/chat/MessageInput';
 import { useAuth } from '@/hooks/useAuth';
-import { db } from '@/lib/firebase';
-import type { Chat, ChatMessage, WickerUser } from '@/lib/types';
+import { createClient } from '@/lib/supabase/client';
+import type { Conversation, Message, UserProfile } from '@/lib/types';
 import { EphemeralSettingsSuggestion } from '@/lib/types';
-import { suggestEphemeralSettings } from '@/ai/flows/suggest-ephemeral-settings'; // AI Flow
-import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, writeBatch, deleteDoc } from 'firebase/firestore';
+import { suggestEphemeralSettings } from '@/ai/flows/suggest-ephemeral-settings';
 import { Loader2 } from 'lucide-react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { encryptMessage, decryptMessage, generateAESKeyString, importAESKeyFromString } from '@/lib/crypto';
-import { isValid } from 'date-fns'; // For checking timestamp validity
+import { isValid, parseISO } from 'date-fns';
 
 export default function ChatConversationPage() {
   const params = useParams();
-  const chatId = params.chatId as string;
+  const router = useRouter();
+  const conversationId = params.chatId as string;
   const { wickerUser, loading: authLoading } = useAuth();
-  const [chatDetails, setChatDetails] = useState<Chat | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversationDetails, setConversationDetails] = useState<Conversation | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loadingChat, setLoadingChat] = useState(true);
   const [sharedSecret, setSharedSecret] = useState<CryptoKey | null>(null);
   const { toast } = useToast();
   const processedMessageIds = useRef(new Set<string>());
+  const supabase = createClient();
 
 
+  // Set up end-to-end encryption key
   useEffect(() => {
     const setupEncryptionKey = async () => {
-      if (chatId) {
+      if (conversationId) {
         try {
-          const pseudoSecretString = `wicker-chat-key-${chatId}`;
+          const pseudoSecretString = `wicker-chat-key-${conversationId}`;
           const key = await generateAESKeyString(pseudoSecretString);
           const importedKey = await importAESKeyFromString(key, pseudoSecretString);
           setSharedSecret(importedKey);
@@ -42,212 +43,189 @@ export default function ChatConversationPage() {
       }
     };
     setupEncryptionKey();
-  }, [chatId, toast]);
+  }, [conversationId, toast]);
 
 
+  // Main effect for fetching data and subscribing to real-time updates
   useEffect(() => {
-    if (!chatId || !wickerUser) {
-        setLoadingChat(false);
-        return;
+    if (!conversationId || !wickerUser || !sharedSecret) {
+      setLoadingChat(false);
+      return;
     }
+
     setLoadingChat(true);
     processedMessageIds.current.clear();
 
-    const chatDocRef = doc(db, 'chats', chatId);
-    const unsubscribeChatDetails = onSnapshot(chatDocRef, async (docSnap) => {
-      if (docSnap.exists()) {
-        const chatData = { id: docSnap.id, ...docSnap.data() } as Chat;
-        
-        if ((!chatData.participantDetails || chatData.participantDetails.length === 0) && chatData.participants && chatData.participants.length > 0) {
-          try {
-            const participantDetailsPromises = chatData.participants.map(async (uid) => {
-              const userDoc = await getDoc(doc(db, 'users', uid));
-              return userDoc.exists() ? userDoc.data() as WickerUser : null;
-            });
-            const resolvedDetails = (await Promise.all(participantDetailsPromises)).filter(Boolean) as WickerUser[];
-            
-            if (resolvedDetails.length > 0) {
-                chatData.participantDetails = resolvedDetails.map(u => ({ uid: u.uid, username: u.username, publicKey: u.publicKey || null }));
-            } else { 
-                console.warn("Could not resolve any participant details for chat (though participant UIDs exist):", chatId);
-            }
-            setChatDetails(chatData); 
-          } catch (error: any) {
-            console.error("Error fetching full participant details:", error);
-            toast({ title: "Chat Load Error", description: `Could not load full participant details: ${error.message}. Chat may be incomplete.`, variant: "destructive"});
-            setChatDetails(chatData); // Fallback to basic chat data
-          }
-        } else {
-            setChatDetails(chatData); 
-        }
-      } else {
-        setChatDetails(null);
-        toast({ title: "Chat not found", description: "This chat may no longer exist.", variant: "destructive" });
-      }
-    }, (error) => {
-      console.error("Error fetching chat details snapshot:", error);
-      toast({ title: "Chat Load Error", description: "Could not load chat details. You might be offline.", variant: "destructive"});
-      setChatDetails(null);
-      setLoadingChat(false);
-    });
+    const handleNewMessages = async (newMessages: Message[]) => {
+      if (!sharedSecret || !wickerUser) return;
 
-    const messagesQuery = query(
-      collection(db, `chats/${chatId}/messages`),
-      orderBy('timestamp', 'asc')
-    );
-
-    const unsubscribeMessages = onSnapshot(messagesQuery, async (snapshot) => {
-      let newMessages: ChatMessage[] = [];
-      const batch = writeBatch(db);
-      let shouldCommitBatch = false;
-      const idsToDeleteThisCycle = new Set<string>();
-
-      if (sharedSecret && wickerUser && chatDetails) {
-        for (const docSnap of snapshot.docs) {
-          const msgData = { id: docSnap.id, ...docSnap.data() } as ChatMessage;
-          const messageRef = doc(db, `chats/${chatId}/messages`, msgData.id);
-
-          // 1. Handle Expired Messages - Attempt to delete from DB
-          if (msgData.expirationTimestamp && msgData.expirationTimestamp.toDate) {
+      const decryptedMessages = await Promise.all(
+        newMessages.map(async (msg) => {
+          if (msg.encrypted_content && !msg.decryptedContent) {
             try {
-              const expiryDate = msgData.expirationTimestamp.toDate();
-              if (isValid(expiryDate) && expiryDate < new Date()) {
-                if (!idsToDeleteThisCycle.has(msgData.id)) {
-                  batch.delete(messageRef);
-                  shouldCommitBatch = true;
-                  idsToDeleteThisCycle.add(msgData.id);
-                }
-                continue; // Skip further processing for this message
-              }
+              msg.decryptedContent = await decryptMessage(msg.encrypted_content, sharedSecret);
             } catch (e) {
-              console.error("Error processing expiration for DB deletion:", e, msgData.expirationTimestamp);
+              console.error("Failed to decrypt message:", msg.id, e);
+              msg.decryptedContent = "[Failed to decrypt message]";
             }
           }
-          
-          if (idsToDeleteThisCycle.has(msgData.id)) continue;
-
-          // 2. Decrypt content
-          if (msgData.encryptedContent) {
-            try {
-              msgData.decryptedContent = await decryptMessage(msgData.encryptedContent, sharedSecret);
-            } catch (e) {
-              console.error("Failed to decrypt message:", msgData.id, e);
-              msgData.decryptedContent = "[Failed to decrypt message]";
-            }
-          }
-          
-          // 3. Handle Read Status and Burn-on-Read Deletion (for 1-on-1)
-          if (msgData.senderId !== wickerUser.uid && (!msgData.readBy || !msgData.readBy[wickerUser.uid])) {
-            if (!processedMessageIds.current.has(msgData.id)) { 
-              batch.update(messageRef, {
-                [`readBy.${wickerUser.uid}`]: serverTimestamp(),
-                status: 'read' 
-              });
-              shouldCommitBatch = true;
-              processedMessageIds.current.add(msgData.id); 
-              msgData.readBy = { ...msgData.readBy, [wickerUser.uid]: serverTimestamp() as any }; 
-              msgData.status = 'read'; 
-
-              if (msgData.isBurnOnRead && !chatDetails.isGroupChat) {
-                 if (!idsToDeleteThisCycle.has(msgData.id)) {
-                    batch.delete(messageRef);
-                    idsToDeleteThisCycle.add(msgData.id);
-                    // shouldCommitBatch is already true
-                 }
-                 // If deleted, it will be filtered out from newMessages before setting state
-                 continue; // Skip adding to newMessages if burned and deleted
-              }
-            }
-          }
-          newMessages.push(msgData);
-        }
-      } else {
-         snapshot.docs.forEach(docSnap => {
-            const msgData = { id: docSnap.id, ...docSnap.data() } as ChatMessage;
-            // Basic handling if decryption/user context isn't ready
-            if (msgData.expirationTimestamp && msgData.expirationTimestamp.toDate) {
-                try {
-                    const expiryDate = msgData.expirationTimestamp.toDate();
-                    if (isValid(expiryDate) && expiryDate < new Date()) return; // Don't add if expired
-                } catch (e) { /* ignore */ }
-            }
-            msgData.decryptedContent = "[Encryption key not ready or user not loaded]";
-            newMessages.push(msgData);
-         });
-      }
-
-      // Filter out messages that were marked for deletion in this processing cycle
-      setMessages(newMessages.filter(msg => !idsToDeleteThisCycle.has(msg.id)));
+          return msg;
+        })
+      );
       
-      if (shouldCommitBatch) {
-        try {
-            await batch.commit();
-        } catch (error) {
-            console.error("Error committing batch updates/deletions:", error);
-            toast({ title: "Sync Error", description: "Could not update/delete messages.", variant: "destructive" });
+      const uniqueMessages = Array.from(new Map(decryptedMessages.map(m => [m.id, m])).values())
+        .sort((a,b) => parseISO(a.created_at).getTime() - parseISO(b.created_at).getTime());
+
+      setMessages(uniqueMessages);
+
+      // Handle read status updates
+      const unreadMessages = uniqueMessages.filter(
+        msg => msg.sender_id !== wickerUser.id && (!msg.read_by || !msg.read_by[wickerUser.id])
+      );
+      if (unreadMessages.length > 0) {
+        const updates = unreadMessages.map(msg => ({
+          id: msg.id,
+          read_by: {
+            ...msg.read_by,
+            [wickerUser.id]: new Date().toISOString(),
+          },
+          status: 'read'
+        }));
+        await supabase.from('messages').upsert(updates);
+
+        // Handle burn-on-read (non-group chats)
+        if (!conversationDetails?.is_group_chat) {
+          const burnableMessageIds = unreadMessages
+            .filter(msg => msg.is_burn_on_read)
+            .map(msg => msg.id);
+
+          if (burnableMessageIds.length > 0) {
+            await supabase.from('messages').delete().in('id', burnableMessageIds);
+          }
         }
       }
-      setLoadingChat(false); 
-    }, (error) => {
-      console.error("Error fetching messages snapshot:", error);
-      toast({ title: "Message Load Error", description: "Could not load messages. You might be offline.", variant: "destructive"});
-      setMessages([]);
+    };
+
+    const fetchInitialData = async () => {
+      const { data: convData, error: convError } = await supabase
+        .from('conversations')
+        .select(`*, participants:conversation_participants(user_id, profiles:users(username))`)
+        .eq('id', conversationId)
+        .single();
+      
+      if (convError) {
+        console.error("Error fetching conversation details:", convError);
+        toast({ title: "Chat Load Error", description: convError.message, variant: "destructive" });
+        setLoadingChat(false);
+        router.push('/chat');
+        return;
+      }
+      
+      const participants = convData.participants.map((p: any) => ({ user_id: p.user_id, username: p.profiles.username }));
+      setConversationDetails({ ...convData, participants });
+
+      const { data: messagesData, error: messagesError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+
+      if (messagesError) {
+        console.error("Error fetching messages:", messagesError);
+        toast({ title: "Message Load Error", description: messagesError.message, variant: "destructive" });
+      } else {
+        await handleNewMessages(messagesData || []);
+      }
       setLoadingChat(false);
-    });
+    };
+
+    fetchInitialData();
+
+    // Subscribe to real-time messages
+    const channel = supabase
+      .channel(`chat-room-${conversationId}`)
+      .on<Message>(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+        async (payload) => {
+           if (payload.eventType === 'INSERT') {
+             const newMessage = payload.new as Message;
+             setMessages(currentMessages => {
+                const combined = [...currentMessages, newMessage];
+                const unique = Array.from(new Map(combined.map(m => [m.id, m])).values());
+                return unique.sort((a,b) => parseISO(a.created_at).getTime() - parseISO(b.created_at).getTime());
+             });
+             await handleNewMessages(messages);
+           } else if (payload.eventType === 'UPDATE') {
+              const updatedMessage = payload.new as Message;
+              setMessages(currentMessages => currentMessages.map(m => m.id === updatedMessage.id ? {...m, ...updatedMessage} : m));
+           } else if (payload.eventType === 'DELETE') {
+              const deletedMessageId = payload.old.id;
+              setMessages(currentMessages => currentMessages.filter(m => m.id !== deletedMessageId));
+           }
+        }
+      )
+      .subscribe((status, err) => {
+        if (err) {
+            console.error('Channel subscription error:', err);
+            toast({ title: 'Real-time Error', description: 'Connection to chat updates failed.', variant: 'destructive'});
+        }
+      });
+      
+    // Cleanup: Delete expired messages client-side. A server-side cron job is better for this.
+    const interval = setInterval(async () => {
+      const { data: expired, error } = await supabase
+        .from('messages')
+        .delete()
+        .eq('conversation_id', conversationId)
+        .not('expiration_timestamp', 'is', null)
+        .lt('expiration_timestamp', new Date().toISOString());
+
+      if (error) {
+        console.warn("Could not clean up expired messages:", error.message);
+      }
+    }, 60000); // Check every minute
 
     return () => {
-      unsubscribeChatDetails();
-      unsubscribeMessages();
+      supabase.removeChannel(channel);
+      clearInterval(interval);
     };
-  }, [chatId, wickerUser, sharedSecret, toast, chatDetails]); // Added chatDetails to dependencies
+  }, [conversationId, wickerUser, sharedSecret, toast, supabase, router, conversationDetails?.is_group_chat]);
 
-  const handleSendMessage = useCallback(async (content: string, ephemeralSettings?: Partial<ChatMessage>) => {
-    if (!wickerUser || !wickerUser.uid) {
-        toast({ title: "User Error", description: "User profile not available. Cannot send message.", variant: "destructive"});
+  const handleSendMessage = useCallback(async (content: string, ephemeralSettings?: Partial<Message>) => {
+    if (!wickerUser || !wickerUser.user_profile) {
+        toast({ title: "User Error", description: "User profile not available.", variant: "destructive"});
         return;
     }
-    if (!chatId || !content.trim() || !sharedSecret) {
-        if (!sharedSecret) {
-            toast({ title: "Encryption Error", description: "Secure channel not ready. Cannot send message.", variant: "destructive"});
-        }
+    if (!conversationId || !content.trim() || !sharedSecret) {
+        if (!sharedSecret) toast({ title: "Encryption Error", description: "Secure channel not ready.", variant: "destructive"});
         return;
     }
 
     try {
       const encryptedContent = await encryptMessage(content, sharedSecret);
-      const messageData: Omit<ChatMessage, 'id' | 'decryptedContent'> = {
-        chatId,
-        senderId: wickerUser.uid,
-        senderUsername: wickerUser.username,
-        encryptedContent,
-        contentType: 'text',
-        timestamp: serverTimestamp() as any, 
-        isBurnOnRead: ephemeralSettings?.isBurnOnRead || false,
-        expirationTimestamp: ephemeralSettings?.expirationTimestamp || null,
+      const messageData: Omit<Message, 'id' | 'created_at' | 'decryptedContent'> = {
+        conversation_id: conversationId,
+        sender_id: wickerUser.id,
+        sender_username: wickerUser.user_profile.username,
+        encrypted_content: encryptedContent,
+        content_type: 'text',
+        is_burn_on_read: ephemeralSettings?.is_burn_on_read || false,
+        expiration_timestamp: ephemeralSettings?.expiration_timestamp || null,
         status: 'sent',
-        readBy: {}, 
+        read_by: {},
       };
-      await addDoc(collection(db, `chats/${chatId}/messages`), messageData);
       
-      let lastMessageText = content.substring(0, 50);
-      if (messageData.isBurnOnRead || (messageData.expirationTimestamp && messageData.expirationTimestamp.toDate && messageData.expirationTimestamp.toDate() <= new Date(Date.now() + 60000))) { 
-         lastMessageText = "Ephemeral message";
-      }
+      const { error } = await supabase.from('messages').insert([messageData]);
+      if (error) throw error;
+      
+      // The conversation `updated_at` is now handled by a database trigger.
 
-      await updateDoc(doc(db, 'chats', chatId), {
-        lastMessage: {
-          text: lastMessageText,
-          senderId: wickerUser.uid,
-          timestamp: serverTimestamp(),
-          contentType: 'text',
-        },
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending message:', error);
-      toast({ title: "Message Error", description: "Could not send message. You might be offline.", variant: "destructive"});
+      toast({ title: "Message Error", description: `Could not send message: ${error.message}`, variant: "destructive"});
     }
-  }, [chatId, wickerUser, sharedSecret, toast]);
+  }, [conversationId, wickerUser, sharedSecret, toast, supabase]);
 
   const handleAiSuggestSettings = async (messageContent: string): Promise<EphemeralSettingsSuggestion | null> => {
     if (!messageContent.trim()) return null;
@@ -274,15 +252,12 @@ export default function ChatConversationPage() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
         <h2 className="text-2xl font-semibold text-destructive">User Profile Error</h2>
-        <p className="text-muted-foreground max-w-md">
-          Could not load your user profile. You might be offline or an authentication issue occurred.
-        </p>
-        <p className="text-sm mt-4 text-muted-foreground">Please try refreshing or check your internet connection.</p>
+        <p className="text-muted-foreground max-w-md">Could not load your user profile.</p>
       </div>
     );
   }
   
-  if (loadingChat && !chatDetails) { 
+  if (loadingChat && !conversationDetails) { 
     return (
       <div className="flex-1 flex items-center justify-center p-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -291,34 +266,30 @@ export default function ChatConversationPage() {
     );
   }
 
-  if (!chatDetails) {
+  if (!conversationDetails) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
         <h2 className="text-2xl font-semibold text-destructive">Chat Error</h2>
-        <p className="text-muted-foreground max-w-md">
-          Could not load chat details. The chat may not exist, or you might be offline.
-        </p>
+        <p className="text-muted-foreground max-w-md">Could not load chat details.</p>
       </div>
     );
   }
 
-  const chatName = chatDetails.isGroupChat
-    ? chatDetails.groupName
-    : chatDetails.participantDetails?.find(p => p.uid !== wickerUser.uid)?.username || 'Chat';
+  const chatName = conversationDetails.is_group_chat
+    ? conversationDetails.group_name
+    : conversationDetails.participants?.find(p => p.user_id !== wickerUser.id)?.username || 'Chat';
 
   return (
-    <div className="flex-1 flex flex-col"> {/* Removed h-full */}
+    <div className="flex-1 flex flex-col">
       <header className="p-4 border-b border-border bg-card flex items-center shadow-sm">
         <h2 className="text-xl font-semibold text-foreground">{chatName || "Chat"}</h2>
       </header>
-      <ChatWindow messages={messages} currentUserId={wickerUser.uid} />
+      <ChatWindow messages={messages} currentUserId={wickerUser.id} />
       <MessageInput
         onSendMessage={handleSendMessage}
         onSuggestSettings={handleAiSuggestSettings}
-        chatId={chatId}
+        chatId={conversationId}
       />
     </div>
   );
 }
-
-    

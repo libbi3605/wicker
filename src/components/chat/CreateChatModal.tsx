@@ -1,4 +1,3 @@
-
 "use client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
@@ -7,9 +6,8 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/useAuth";
-import { db } from "@/lib/firebase";
-import type { WickerUser } from "@/lib/types";
-import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { createClient } from "@/lib/supabase/client";
+import type { UserProfile } from "@/lib/types";
 import { Loader2, Search, UserPlus, Users } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
@@ -17,41 +15,40 @@ import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 interface CreateChatModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateChat: (selectedUsers: WickerUser[], groupName?: string) => Promise<void>;
+  onCreateChat: (selectedUsers: UserProfile[], groupName?: string) => Promise<void>;
 }
 
 export default function CreateChatModal({ isOpen, onClose, onCreateChat }: CreateChatModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState<WickerUser[]>([]);
-  const [selectedUsers, setSelectedUsers] = useState<WickerUser[]>([]);
+  const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<UserProfile[]>([]);
   const [groupName, setGroupName] = useState('');
   const [isGroupChat, setIsGroupChat] = useState(false);
   const [isLoadingSearch, setIsLoadingSearch] = useState(false);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const { wickerUser } = useAuth();
+  const supabase = createClient();
 
   const searchUsers = useCallback(async (term: string) => {
     if (!term.trim() || !wickerUser) return;
     setIsLoadingSearch(true);
     try {
-      const usersQuery = query(
-        collection(db, 'users'),
-        where('username', '>=', term.toLowerCase()),
-        where('username', '<=', term.toLowerCase() + '\uf8ff'),
-        limit(10)
-      );
-      const querySnapshot = await getDocs(usersQuery);
-      const users = querySnapshot.docs
-        .map(doc => doc.data() as WickerUser)
-        .filter(u => u.uid !== wickerUser.uid); // Exclude self
-      setSearchResults(users);
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('username', `%${term}%`)
+        .not('id', 'eq', wickerUser.id)
+        .limit(10);
+      
+      if (error) throw error;
+      setSearchResults(data || []);
     } catch (error) {
       console.error("Error searching users:", error);
       setSearchResults([]);
     } finally {
       setIsLoadingSearch(false);
     }
-  }, [wickerUser]);
+  }, [wickerUser, supabase]);
 
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
@@ -64,10 +61,10 @@ export default function CreateChatModal({ isOpen, onClose, onCreateChat }: Creat
     return () => clearTimeout(debounceTimer);
   }, [searchTerm, searchUsers]);
   
-  const handleUserSelect = (user: WickerUser) => {
+  const handleUserSelect = (user: UserProfile) => {
     setSelectedUsers(prev =>
-      prev.find(u => u.uid === user.uid)
-        ? prev.filter(u => u.uid !== user.uid)
+      prev.find(u => u.id === user.id)
+        ? prev.filter(u => u.id !== user.id)
         : [...prev, user]
     );
   };
@@ -88,11 +85,7 @@ export default function CreateChatModal({ isOpen, onClose, onCreateChat }: Creat
     setIsCreatingChat(true);
     try {
       await onCreateChat(selectedUsers, isGroupChat ? groupName : undefined);
-      // If onCreateChat is successful, the parent ChatLayout will call onClose,
-      // which in turn changes the isOpen prop, triggering the useEffect to reset the modal's state.
     } catch (error) {
-      // Error handling (e.g., toast message) is expected to be done in the `onCreateChat` function
-      // or handled by the parent. The modal remains open for retry.
       console.error("CreateChatModal: Error during onCreateChat call from parent:", error);
     } finally {
       setIsCreatingChat(false); 
@@ -139,17 +132,17 @@ export default function CreateChatModal({ isOpen, onClose, onCreateChat }: Creat
             <ScrollArea className="h-[150px] border rounded-md p-2">
               <div className="space-y-2">
                 {searchResults.map(user => (
-                  <div key={user.uid} className="flex items-center justify-between p-2 rounded hover:bg-accent/10">
+                  <div key={user.id} className="flex items-center justify-between p-2 rounded hover:bg-accent/10">
                     <div className="flex items-center space-x-2">
                        <Avatar className="h-8 w-8">
                          <AvatarImage src={`https://placehold.co/40x40.png?text=${user.username.substring(0,1).toUpperCase()}`} alt={user.username} data-ai-hint="person avatar" />
                          <AvatarFallback>{user.username.substring(0,1).toUpperCase()}</AvatarFallback>
                        </Avatar>
-                       <Label htmlFor={`user-${user.uid}`} className="font-normal">{user.username}</Label>
+                       <Label htmlFor={`user-${user.id}`} className="font-normal">{user.username}</Label>
                     </div>
                     <Checkbox
-                      id={`user-${user.uid}`}
-                      checked={selectedUsers.some(u => u.uid === user.uid)}
+                      id={`user-${user.id}`}
+                      checked={selectedUsers.some(u => u.id === user.id)}
                       onCheckedChange={() => handleUserSelect(user)}
                       disabled={isCreatingChat}
                     />
@@ -167,7 +160,7 @@ export default function CreateChatModal({ isOpen, onClose, onCreateChat }: Creat
                 <Label className="text-sm font-medium">Selected:</Label>
                 <div className="flex flex-wrap gap-2 mt-1 p-2 border rounded-md bg-muted/50">
                     {selectedUsers.map(u => (
-                        <div key={u.uid} className="flex items-center space-x-1 px-2 py-1 text-xs bg-primary text-primary-foreground rounded-full">
+                        <div key={u.id} className="flex items-center space-x-1 px-2 py-1 text-xs bg-primary text-primary-foreground rounded-full">
                             <span>{u.username}</span>
                             <button onClick={() => !isCreatingChat && handleUserSelect(u)} className="opacity-70 hover:opacity-100" disabled={isCreatingChat}>&times;</button>
                         </div>

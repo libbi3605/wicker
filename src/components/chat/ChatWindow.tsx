@@ -1,14 +1,14 @@
 "use client";
-import type { ChatMessage } from '@/lib/types';
+import type { Message } from '@/lib/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { format, isValid } from 'date-fns';
+import { format, isValid, parseISO } from 'date-fns';
 import { Clock, Flame, Eye } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
 interface ChatWindowProps {
-  messages: ChatMessage[];
+  messages: Message[];
   currentUserId: string;
 }
 
@@ -22,45 +22,43 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
   }, [messages]);
 
   const filteredMessages = messages.filter(msg => {
-    if (msg.isBurnOnRead && msg.readBy && msg.readBy[currentUserId]) {
+    if (msg.is_burn_on_read && msg.read_by && msg.read_by[currentUserId]) {
       return false; 
     }
-    if (msg.expirationTimestamp && msg.expirationTimestamp.toDate) {
+    if (msg.expiration_timestamp) {
       try {
-        const expiryDate = msg.expirationTimestamp.toDate();
+        const expiryDate = parseISO(msg.expiration_timestamp);
         if (isValid(expiryDate) && expiryDate < new Date()) {
           return false; 
         }
       } catch (e) {
-        console.error("Error converting Firestore Timestamp to Date for expiration check:", e, msg.expirationTimestamp);
+        console.error("Error parsing expiration timestamp:", e, msg.expiration_timestamp);
       }
     }
     return true;
   });
 
   return (
-    <ScrollArea className="flex-1 p-4 bg-background min-h-0 relative" ref={scrollAreaRef}> {/* Added relative */}
-      {/* Background Logo Div */}
+    <ScrollArea className="flex-1 p-4 bg-background min-h-0 relative" ref={scrollAreaRef}>
       <div
         className="absolute inset-0 z-0 bg-no-repeat bg-center bg-contain opacity-10 pointer-events-none"
         style={{ backgroundImage: `url('https://i.imgur.com/qRm5rG3.png')` }}
       />
-      {/* Messages container - needs to be on top */}
-      <div className="space-y-1 relative z-10"> {/* Added relative z-10 */}
+      <div className="space-y-1 relative z-10">
         {filteredMessages.map((msg, index) => {
-          const isCurrentUser = msg.senderId === currentUserId;
-          const senderInitial = msg.senderUsername?.substring(0, 1).toUpperCase() || '?';
+          const isCurrentUser = msg.sender_id === currentUserId;
+          const senderInitial = msg.sender_username?.substring(0, 1).toUpperCase() || '?';
           
           const prevMessage = filteredMessages[index - 1];
-          const isFirstInSenderBlock = index === 0 || prevMessage?.senderId !== msg.senderId;
+          const isFirstInSenderBlock = index === 0 || prevMessage?.sender_id !== msg.sender_id;
           const showAvatarAndName = !isCurrentUser && isFirstInSenderBlock;
           
           let ephemeralIndicator = null;
-          if (msg.isBurnOnRead) {
+          if (msg.is_burn_on_read) {
             ephemeralIndicator = <Flame size={12} className="text-orange-500" title="Burn on read" />;
-          } else if (msg.expirationTimestamp && msg.expirationTimestamp.toDate) {
+          } else if (msg.expiration_timestamp) {
             try {
-                const expiryDate = msg.expirationTimestamp.toDate();
+                const expiryDate = parseISO(msg.expiration_timestamp);
                 if (isValid(expiryDate) && expiryDate >= new Date()) { 
                     ephemeralIndicator = <Clock size={12} className="text-blue-500" title={`Expires ${format(expiryDate, "PPp")}`} />;
                 } else if (isValid(expiryDate) && expiryDate < new Date()) {
@@ -82,7 +80,7 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
             >
               {showAvatarAndName && (
                 <Avatar className="h-8 w-8 self-end mb-0.5"> 
-                  <AvatarImage src={`https://placehold.co/40x40.png?text=${senderInitial}`} alt={msg.senderUsername} data-ai-hint="person avatar"/>
+                  <AvatarImage src={`https://placehold.co/40x40.png?text=${senderInitial}`} alt={msg.sender_username} data-ai-hint="person avatar"/>
                   <AvatarFallback>{senderInitial}</AvatarFallback>
                 </Avatar>
               )}
@@ -98,17 +96,17 @@ export default function ChatWindow({ messages, currentUserId }: ChatWindowProps)
                     : 'bg-card text-card-foreground border'
                 )}
               >
-                {!isCurrentUser && msg.senderUsername && showAvatarAndName && (
-                  <p className="text-xs font-medium mb-1 opacity-80">{msg.senderUsername}</p>
+                {!isCurrentUser && msg.sender_username && showAvatarAndName && (
+                  <p className="text-xs font-medium mb-1 opacity-80">{msg.sender_username}</p>
                 )}
                 <p className="text-sm whitespace-pre-wrap break-words">
-                  {msg.decryptedContent || msg.encryptedContent} 
-                  {msg.contentType === 'image' && !msg.decryptedContent && '[Image - Decryption Pending]'}
-                  {msg.contentType === 'file' && !msg.decryptedContent && '[File - Decryption Pending]'}
+                  {msg.decryptedContent || msg.encrypted_content} 
+                  {msg.content_type === 'image' && !msg.decryptedContent && '[Image - Decryption Pending]'}
+                  {msg.content_type === 'file' && !msg.decryptedContent && '[File - Decryption Pending]'}
                 </p>
                 <div className="mt-1 flex items-center space-x-1.5 text-xs opacity-70">
-                  {msg.timestamp && msg.timestamp.toDate && isValid(msg.timestamp.toDate()) ? (
-                    <span>{format(msg.timestamp.toDate(), 'p')}</span>
+                  {msg.created_at ? (
+                    <span>{format(parseISO(msg.created_at), 'p')}</span>
                   ) : (
                     <span>Sending...</span> 
                   )}

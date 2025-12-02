@@ -1,140 +1,187 @@
-
 "use client";
-import type { User as FirebaseUser } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
-import type { WickerUser } from '@/lib/types';
-import { createUserWithEmailAndPassword, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+import type { WickerUser, UserProfile } from '@/lib/types';
+import { createClient } from '@/lib/supabase/client';
 import type { ReactNode } from 'react';
-import { createContext, useEffect, useState } from 'react';
+import { createContext, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
 interface AuthContextType {
-  currentUser: FirebaseUser | null;
+  currentUser: SupabaseUser | null;
   wickerUser: WickerUser | null;
   loading: boolean;
-  signUp: (username: string, pass: string) => Promise<FirebaseUser | null>;
-  signIn: (username:string, pass: string) => Promise<FirebaseUser | null>;
+  signUp: (username: string, pass: string, email: string) => Promise<WickerUser | null>;
+  signIn: (email: string, pass: string) => Promise<WickerUser | null>;
   signOut: () => Promise<void>;
-  signInAsGuest: () => Promise<FirebaseUser | null>;
+  signInAsGuest: () => Promise<WickerUser | null>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const formatEmailForFirebase = (username: string) => `${username.toLowerCase()}@wicker.app`; // Changed domain for uniqueness
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const supabase = createClient();
+  const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
   const [wickerUser, setWickerUser] = useState<WickerUser | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const { toast } = useToast();
 
+  const fetchUserProfile = useCallback(async (user: SupabaseUser): Promise<UserProfile | null> => {
+    const { data: user_profile, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') { // PGRST116: "exact one row was not found"
+      console.error("Error fetching user profile:", error);
+      toast({
+        title: "Profile Error",
+        description: "Could not load your profile.",
+        variant: "destructive",
+      });
+      return null;
+    }
+    return user_profile;
+  }, [supabase, toast]);
+
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    setLoading(true);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const user = session?.user || null;
       setCurrentUser(user);
+
       if (user) {
-        try {
-          const userDocRef = doc(db, 'users', user.uid);
-          const userDocSnap = await getDoc(userDocRef);
-          if (userDocSnap.exists()) {
-            setWickerUser(userDocSnap.data() as WickerUser);
-          } else if (user.isAnonymous) {
-            const baseAnonUsername = `Guest-${user.uid.substring(0, 6)}`;
-            const anonUsername = baseAnonUsername.toLowerCase();
-            const anonUser: WickerUser = {
-                uid: user.uid,
-                username: anonUsername,
-                createdAt: serverTimestamp() as any,
-            };
-            await setDoc(userDocRef, anonUser, { merge: true });
-            setWickerUser(anonUser);
-          } else {
-            console.warn("WickerUser document not found for UID:", user.uid, "User is not anonymous.");
-            setWickerUser(null); 
-          }
-        } catch (error: any) {
-          console.error("Error fetching user document in AuthContext:", error);
-          toast({
-            title: "Profile Error",
-            description: "Could not load your profile. You might be offline or an error occurred.",
-            variant: "destructive",
-          });
-          setWickerUser(null);
+        const profile = await fetchUserProfile(user);
+        if (profile) {
+          setWickerUser({ ...user, user_profile: profile });
+        } else {
+          // This case might happen for a guest user on their very first load
+           if (user.is_anonymous) {
+             const baseAnonUsername = `Guest-${user.id.substring(0, 6)}`;
+             const { data: newProfile, error: insertError } = await supabase
+              .from('users')
+              .insert({ id: user.id, username: baseAnonUsername })
+              .select()
+              .single();
+
+            if (insertError) {
+                console.error("Error creating guest profile:", insertError);
+                setWickerUser(null);
+            } else {
+                setWickerUser({ ...user, user_profile: newProfile });
+            }
+           } else {
+              setWickerUser(null);
+           }
         }
       } else {
         setWickerUser(null);
       }
       setLoading(false);
     });
-    return () => unsubscribe();
-  }, [toast]);
-  
-  const signUp = async (username: string, pass: string) => {
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [supabase, fetchUserProfile]);
+
+  const signUp = async (username: string, password: string, email: string) => {
     setLoading(true);
-    try {
-      const email = formatEmailForFirebase(username);
-      const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-      const firebaseUser = userCredential.user;
-      
-      const wickerUserData: WickerUser = {
-        uid: firebaseUser.uid,
-        username: username.toLowerCase(),
-        createdAt: serverTimestamp() as any,
-      };
-      await setDoc(doc(db, 'users', firebaseUser.uid), wickerUserData);
-      
-      setCurrentUser(firebaseUser);
-      setWickerUser(wickerUserData);
+    const { data: { user }, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          username: username.toLowerCase(),
+        },
+      },
+    });
+
+    if (signUpError) {
+      console.error("Error signing up:", signUpError);
       setLoading(false);
-      return firebaseUser;
-    } catch (error) {
-      console.error("Error signing up:", error);
-      setLoading(false);
-      throw error;
+      throw signUpError;
     }
+    if (!user) {
+        setLoading(false);
+        throw new Error("Sign up successful, but no user returned.");
+    }
+    
+    // The user profile is now created via a trigger in Supabase,
+    // so we just need to fetch it.
+    const profile = await fetchUserProfile(user);
+    if (!profile) {
+        setLoading(false);
+        throw new Error("User created, but profile could not be found.");
+    }
+    const signedInWickerUser = { ...user, user_profile: profile };
+    setWickerUser(signedInWickerUser);
+    setLoading(false);
+    return signedInWickerUser;
   };
 
-  const signIn = async (username: string, pass: string) => {
+  const signIn = async (email: string, password: string) => {
     setLoading(true);
-    try {
-      const email = formatEmailForFirebase(username);
-      const userCredential = await signInWithEmailAndPassword(auth, email, pass);
-      const firebaseUser = userCredential.user;
-      setCurrentUser(firebaseUser);
-      setLoading(false);
-      return firebaseUser;
-    } catch (error) {
+    const { data: { user }, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
       console.error("Error signing in:", error);
       setLoading(false);
       throw error;
     }
+    if (!user) {
+        setLoading(false);
+        throw new Error("Sign in successful, but no user returned.");
+    }
+    
+    const profile = await fetchUserProfile(user);
+     if (!profile) {
+        setLoading(false);
+        throw new Error("User signed in, but profile could not be found.");
+    }
+    const signedInWickerUser = { ...user, user_profile: profile };
+    setWickerUser(signedInWickerUser);
+    setLoading(false);
+    return signedInWickerUser;
   };
-  
+
   const signInAsGuest = async () => {
     setLoading(true);
-    try {
-      const userCredential = await signInAnonymously(auth);
-      const firebaseUser = userCredential.user;
-      setCurrentUser(firebaseUser);
-      // Toast for guest sign-in is now handled in AuthPage.tsx for immediate feedback
-      setLoading(false);
-      return firebaseUser;
-    } catch (error) {
-      console.error("Error signing in anonymously:", error);
+    const { data: { user }, error } = await supabase.auth.signInAnonymously();
+
+    if (error) {
+      console.error("Error signing in as guest:", error);
       setLoading(false);
       throw error;
     }
+    if (!user) {
+      setLoading(false);
+      throw new Error("Guest sign in successful, but no user returned.");
+    }
+
+    // The onAuthStateChange handler will create the guest profile if it doesn't exist.
+    // We can just wait for it to be set.
+    const profile = await fetchUserProfile(user);
+    const guestWickerUser = { ...user, user_profile: profile || { id: user.id, username: `Guest-${user.id.substring(0,6)}`, created_at: new Date().toISOString() }};
+    setWickerUser(guestWickerUser);
+
+    setLoading(false);
+    return guestWickerUser;
   };
 
   const signOut = async () => {
     setLoading(true);
     try {
-      await firebaseSignOut(auth);
+      await supabase.auth.signOut();
       setCurrentUser(null);
       setWickerUser(null);
-      router.push('/auth'); 
+      router.push('/auth');
     } catch (error) {
       console.error("Error signing out:", error);
       toast({ title: "Sign Out Error", description: "Could not sign out properly.", variant: "destructive" });

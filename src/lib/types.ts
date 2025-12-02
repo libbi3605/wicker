@@ -1,62 +1,65 @@
-import type { Timestamp } from 'firebase/firestore';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
-export interface WickerUser {
-  uid: string;
+// Combining Supabase user with our custom profile data
+export interface UserProfile {
+  id: string; // UUID from auth.users
   username: string;
-  publicKey?: string; // For E2EE
-  createdAt: Timestamp;
-  lastSeen?: Timestamp;
+  created_at: string;
+  last_seen?: string;
 }
 
-export interface ChatParticipant {
-  uid: string;
+export type WickerUser = SupabaseUser & { user_profile: UserProfile };
+
+
+export interface ConversationParticipant {
+  user_id: string;
   username: string;
-  publicKey?: string;
 }
 
-export interface Chat {
-  id: string;
-  participants: string[]; // Array of user UIDs
-  participantDetails?: ChatParticipant[]; // Optional: denormalized participant info
-  isGroupChat: boolean;
-  groupName?: string;
-  groupAdmins?: string[]; // Array of user UIDs for group admins
-  lastMessage?: ChatMessageSnippet;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  typingUsers?: { [uid: string]: string }; // { uid: username }
-}
-
-export interface ChatMessageSnippet {
-  text?: string;
-  senderId?: string;
-  timestamp?: Timestamp;
-  contentType?: 'text' | 'file' | 'image';
+export interface Conversation {
+  id: string; // UUID
+  is_group_chat: boolean;
+  group_name?: string;
+  group_admins?: string[];
+  created_at: string;
+  updated_at: string;
+  // For UI display
+  participants?: ConversationParticipant[]; 
+  last_message_text?: string;
+  last_message_timestamp?: string;
+  last_message_sender_id?: string;
+  last_message_content_type?: string;
 }
 
 export type MessageContentType = 'text' | 'file' | 'image' | 'system';
 
-export interface ChatMessage {
-  id: string;
-  chatId: string;
-  senderId: string;
-  senderUsername?: string; // Denormalized for convenience
-  encryptedContent: string; // E2EE message ciphertext
+export interface Message {
+  id: string; // UUID
+  conversation_id: string;
+  sender_id: string;
+  sender_username?: string; // Denormalized for convenience
+  encrypted_content: string; // E2EE message ciphertext
   decryptedContent?: string; // Client-side only, after decryption
-  contentType: MessageContentType;
-  fileUrl?: string; // For encrypted file content in Firebase Storage
-  fileName?: string;
-  fileSize?: number;
-  timestamp: Timestamp;
-  expirationTimestamp?: Timestamp | null;
-  isBurnOnRead: boolean;
-  readBy?: { [uid: string]: Timestamp }; // Tracks who read and when
-  status?: 'sent' | 'delivered' | 'read' | 'error' | 'deleted';
+  content_type: MessageContentType;
+  file_url?: string;
+  file_name?: string;
+t file_size?: number;
+  created_at: string;
+  expiration_timestamp?: string | null;
+  is_burn_on_read: boolean;
+  read_by?: { [uid: string]: string }; // Tracks who read and when
+  status?: 'sent' | 'delivered' | 'read' | 'error';
 }
+
 
 // For AI suggestions
 export interface EphemeralSettingsSuggestion {
   expirationTimeSuggestion: '1 minute' | '1 hour' | '1 day' | 'never';
   burnOnReadSuggestion: boolean;
   reasoning: string;
+}
+
+// For database function returns
+export interface CreateChatResponse {
+  conversation_id: string;
 }

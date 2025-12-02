@@ -12,18 +12,18 @@ import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
 
 export default function AuthPage() {
-  const { currentUser, loading: authLoading, signInAsGuest } = useAuth();
+  const { wickerUser, loading: authLoading, signInAsGuest } = useAuth();
   const router = useRouter();
   const [guestLoading, setGuestLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!authLoading && currentUser) {
+    if (!authLoading && wickerUser) {
       router.push('/chat');
     }
-  }, [currentUser, authLoading, router]);
+  }, [wickerUser, authLoading, router]);
 
-  if (authLoading || currentUser) {
+  if (authLoading || wickerUser) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
