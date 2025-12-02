@@ -11,11 +11,13 @@ interface AuthContextType {
   currentUser: SupabaseUser | null;
   wickerUser: WickerUser | null;
   loading: boolean;
-  signUp: (username: string, pass: string, email: string) => Promise<WickerUser | null>;
-  signIn: (email: string, pass: string) => Promise<WickerUser | null>;
+  signUp: (username: string, pass: string) => Promise<WickerUser | null>;
+  signIn: (username: string, pass: string) => Promise<WickerUser | null>;
   signOut: () => Promise<void>;
   signInAsGuest: () => Promise<WickerUser | null>;
 }
+
+const DUMMY_EMAIL_DOMAIN = 'wicker.app';
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -74,6 +76,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 setWickerUser({ ...user, user_profile: newProfile });
             }
            } else {
+              // This might be a regular user whose profile trigger failed.
+              // We'll wait for sign-up/sign-in logic to handle it.
               setWickerUser(null);
            }
         }
@@ -88,14 +92,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [supabase, fetchUserProfile]);
 
-  const signUp = async (username: string, password: string, email: string) => {
+  const signUp = async (username: string, password: string) => {
     setLoading(true);
+    const email = `${username.toLowerCase()}@${DUMMY_EMAIL_DOMAIN}`;
+
     const { data: { user }, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
-          username: username.toLowerCase(),
+          username: username,
         },
       },
     });
@@ -103,6 +109,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (signUpError) {
       console.error("Error signing up:", signUpError);
       setLoading(false);
+      // Provide a more user-friendly error message
+      if (signUpError.message.includes('User already registered')) {
+        throw new Error('This username is already taken.');
+      }
       throw signUpError;
     }
     if (!user) {
@@ -112,6 +122,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     
     // The user profile is now created via a trigger in Supabase,
     // so we just need to fetch it.
+    // We add a small delay to give the trigger time to run.
+    await new Promise(resolve => setTimeout(resolve, 500)); 
     const profile = await fetchUserProfile(user);
     if (!profile) {
         setLoading(false);
@@ -119,12 +131,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     const signedInWickerUser = { ...user, user_profile: profile };
     setWickerUser(signedInWickerUser);
+    setCurrentUser(user);
     setLoading(false);
     return signedInWickerUser;
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (username: string, password: string) => {
     setLoading(true);
+    const email = `${username.toLowerCase()}@${DUMMY_EMAIL_DOMAIN}`;
     const { data: { user }, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -147,6 +161,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     const signedInWickerUser = { ...user, user_profile: profile };
     setWickerUser(signedInWickerUser);
+    setCurrentUser(user);
     setLoading(false);
     return signedInWickerUser;
   };
@@ -167,9 +182,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     // The onAuthStateChange handler will create the guest profile if it doesn't exist.
     // We can just wait for it to be set.
+    await new Promise(resolve => setTimeout(resolve, 500));
     const profile = await fetchUserProfile(user);
     const guestWickerUser = { ...user, user_profile: profile || { id: user.id, username: `Guest-${user.id.substring(0,6)}`, created_at: new Date().toISOString() }};
     setWickerUser(guestWickerUser);
+    setCurrentUser(user);
 
     setLoading(false);
     return guestWickerUser;
